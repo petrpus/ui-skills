@@ -16,7 +16,7 @@ Totéž platí pro jakoukoli další AGPL/GPL závislost.
 - `skills/`, `commands/` — tenká orchestrační vrstva pro agenta.
 - `packages/` — veškerá deterministická práce (TypeScript CLI nástroje). Agent je
   jen volá. Drží to kontext malý a chování reprodukovatelné.
-- `spec/SPEC-ui-skills.md` — zdroj pravdy pro záběr a fázování.
+- `docs/spec/SPEC-ui-skills.md` — zdroj pravdy pro záběr a fázování.
 
 Nová logika patří do `packages/`, ne do SKILL.md.
 

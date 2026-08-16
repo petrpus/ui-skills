@@ -36,8 +36,6 @@
       "Write(packages/**)",
       "Edit(bin/**)",
       "Write(bin/**)",
-      "Edit(spec/**)",
-      "Write(spec/**)",
       "Edit(.claude-plugin/**)",
       "Write(.claude-plugin/**)",
       "Edit(tests/**)",
