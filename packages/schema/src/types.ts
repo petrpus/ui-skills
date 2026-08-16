@@ -5,6 +5,31 @@ export const TOKEN_GROUPS = ["color", "spacing", "radius", "shadow"] as const;
 
 export type TokenGroupName = (typeof TOKEN_GROUPS)[number];
 
+/**
+ * The vocabulary the demo understands. A project maps its own naming onto these
+ * so the composite page and the contrast pairs work whatever the tokens are
+ * called — `ink` on `paper` reads the same as `text` on `surface` once mapped.
+ */
+export const ROLES = [
+  "surface",
+  "surface-2",
+  "text",
+  "text-muted",
+  "primary",
+  "on-primary",
+  "border",
+  "danger",
+  "on-danger",
+] as const;
+
+export type RoleName = (typeof ROLES)[number];
+
+/** Foreground/background pair to check, named by qualified token name. */
+export interface ContrastPair {
+  readonly fg: string;
+  readonly bg: string;
+}
+
 interface TokenMeta {
   /** CSS custom property this token maps to, e.g. `--color-primary`. */
   readonly css?: string;
@@ -38,6 +63,8 @@ export interface Tokens {
   readonly spacing?: TokenGroup;
   readonly radius?: TokenGroup;
   readonly shadow?: TokenGroup;
+  readonly roles?: Readonly<Partial<Record<RoleName, string>>>;
+  readonly contrastPairs?: readonly ContrastPair[];
 }
 
 /** A token with its reference chain followed to the literal value at the end. */
@@ -67,6 +94,8 @@ export interface ResolvedToken {
  */
 export type ResolvedGroup = readonly ResolvedToken[];
 
+export type ResolvedRoles = Readonly<Partial<Record<RoleName, ResolvedToken>>>;
+
 export interface ResolvedTokens {
   readonly schemaVersion: number;
   readonly name?: string;
@@ -74,6 +103,13 @@ export interface ResolvedTokens {
   readonly spacing?: ResolvedGroup;
   readonly radius?: ResolvedGroup;
   readonly shadow?: ResolvedGroup;
+  readonly roles?: ResolvedRoles;
+  readonly contrastPairs?: readonly ResolvedContrastPair[];
+}
+
+export interface ResolvedContrastPair {
+  readonly fg: ResolvedToken;
+  readonly bg: ResolvedToken;
 }
 
 /**

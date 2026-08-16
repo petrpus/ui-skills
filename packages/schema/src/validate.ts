@@ -1,4 +1,7 @@
 import {
+  type ContrastPair,
+  ROLES,
+  type RoleName,
   SCHEMA_VERSION,
   TOKEN_GROUPS,
   type Token,
@@ -88,6 +91,53 @@ function validateGroup(raw: unknown, path: string): TokenGroup {
   return group;
 }
 
+function validateRoles(raw: unknown): Partial<Record<RoleName, string>> {
+  if (!isRecord(raw)) {
+    throw new TokensError("skupina rolí musí být objekt", "roles");
+  }
+
+  const roles: Partial<Record<RoleName, string>> = {};
+  for (const [name, target] of Object.entries(raw)) {
+    if (!(ROLES as readonly string[]).includes(name)) {
+      throw new TokensError(`neznámá role "${name}" (demo umí: ${ROLES.join(", ")})`, "roles");
+    }
+    if (typeof target !== "string" || !QUALIFIED_NAME.test(target)) {
+      throw new TokensError(
+        'role musí ukazovat na kvalifikované jméno tokenu, např. "color.ink"',
+        `roles.${name}`,
+      );
+    }
+    roles[name as RoleName] = target;
+  }
+  return roles;
+}
+
+function validateContrastPairs(raw: unknown): ContrastPair[] {
+  if (!Array.isArray(raw)) {
+    throw new TokensError("contrastPairs musí být pole", "contrastPairs");
+  }
+
+  return raw.map((entry, position) => {
+    const path = `contrastPairs[${position}]`;
+    if (!isRecord(entry)) {
+      throw new TokensError("dvojice musí být objekt s poli fg a bg", path);
+    }
+    const { fg, bg } = entry;
+    for (const [key, value] of [
+      ["fg", fg],
+      ["bg", bg],
+    ] as const) {
+      if (typeof value !== "string" || !QUALIFIED_NAME.test(value)) {
+        throw new TokensError(
+          `"${key}" musí být kvalifikované jméno tokenu, např. "color.ink"`,
+          path,
+        );
+      }
+    }
+    return { fg: fg as string, bg: bg as string };
+  });
+}
+
 function validateSchemaVersion(raw: Record<string, unknown>): void {
   const { schemaVersion } = raw;
 
@@ -120,9 +170,12 @@ export function validateTokens(raw: unknown): Tokens {
 
   validateSchemaVersion(raw);
 
-  const tokens: { schemaVersion: number; name?: string } & Partial<
-    Record<TokenGroupName, TokenGroup>
-  > = { schemaVersion: SCHEMA_VERSION };
+  const tokens: {
+    schemaVersion: number;
+    name?: string;
+    roles?: Partial<Record<RoleName, string>>;
+    contrastPairs?: ContrastPair[];
+  } & Partial<Record<TokenGroupName, TokenGroup>> = { schemaVersion: SCHEMA_VERSION };
 
   if (raw.name !== undefined) {
     if (typeof raw.name !== "string") {
@@ -136,6 +189,13 @@ export function validateTokens(raw: unknown): Tokens {
     if (group !== undefined) {
       tokens[groupName] = validateGroup(group, groupName);
     }
+  }
+
+  if (raw.roles !== undefined) {
+    tokens.roles = validateRoles(raw.roles);
+  }
+  if (raw.contrastPairs !== undefined) {
+    tokens.contrastPairs = validateContrastPairs(raw.contrastPairs);
   }
 
   return tokens;
