@@ -32,6 +32,13 @@ interface Resolution {
  * Records the answer for every token on the walked path, not just the one asked
  * about: each is the head of its own valid chain. Without this, resolving a
  * chain of n tokens walks it n times over.
+ *
+ * This buys a large constant factor, not a better complexity class. Giving each
+ * token its own `chain` means a chain of n tokens produces n arrays totalling
+ * n²/2 entries no matter how it is computed — a floor set by the data shape.
+ * What the cache removes is the repeated graph walking on top of that, which is
+ * what actually hurts: the realistic shape, many semantic tokens pointing at one
+ * primitive, becomes linear.
  */
 function memoize(chain: readonly string[], value: string, cache: Map<string, Resolution>): void {
   for (let i = 0; i < chain.length; i += 1) {
