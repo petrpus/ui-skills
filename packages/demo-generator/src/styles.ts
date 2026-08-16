@@ -64,6 +64,14 @@ body {
   font-family: var(--ui-mono); font-size: 0.75rem;
   color: var(--ui-ink-soft); margin-top: 0.125rem;
 }
+.swatch__chain {
+  font-family: var(--ui-mono); font-size: 0.6875rem;
+  color: var(--ui-ink-soft); margin-top: 0.25rem;
+}
+.swatch__css {
+  font-family: var(--ui-mono); font-size: 0.6875rem;
+  color: var(--ui-ink-soft); margin-top: 0.25rem; opacity: 0.8;
+}
 .swatch__note { font-size: 0.75rem; color: var(--ui-ink-soft); margin-top: 0.5rem; }
 
 .empty {

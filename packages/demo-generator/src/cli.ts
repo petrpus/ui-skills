@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
-import { TokensError, validateTokens } from "@ui-skills/schema";
+import { resolveTokens, TokensError, validateTokens } from "@ui-skills/schema";
 import { renderDemo } from "./render.ts";
 
 const USAGE = `Použití: design-demo [tokens.json] [--out <soubor>]
@@ -65,7 +65,7 @@ function readTokensFile(path: string): unknown {
 
 export function run(argv: readonly string[]): string {
   const { tokensPath, outPath } = parseArgs(argv);
-  const tokens = validateTokens(readTokensFile(resolve(tokensPath)));
+  const tokens = resolveTokens(validateTokens(readTokensFile(resolve(tokensPath))));
   const target = resolveOutPath(tokensPath, outPath);
 
   writeFileSync(target, renderDemo(tokens));

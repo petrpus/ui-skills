@@ -49,7 +49,7 @@ const FUNCTION_CALL = /(-{0,2}[a-z][a-z0-9-]*)\s*\(/gi;
  * backslashes (a CSS escape can spell a function name past a textual check),
  * braces and semicolons (they end the declaration).
  */
-const ALLOWED_VALUE_CHARS = /^[a-z0-9 \t.,%#+*\/()_-]*$/i;
+const ALLOWED_VALUE_CHARS = /^[a-z0-9 \t.,%#+*/()_-]*$/i;
 
 /**
  * Decides whether a token value may be inlined into a `style` attribute.
