@@ -196,12 +196,10 @@ describe("pairing across scale orderings", () => {
     expect(html).toContain("Párování h1 + body");
   });
 
-  it("falls back to the author's order when one step cannot be measured", () => {
-    // A deliberate trade. Sorting the measurable steps among themselves reads
-    // well here — big over small — but the same rule crowns a lone literal step
-    // on a scale written through CSS custom properties, where it is usually the
-    // smallest. Partial measurement is not evidence about what it could not
-    // read, so the whole ordering defers to the document.
+  it("still compares the steps it can measure when one of them is a keyword", () => {
+    // Two measurable steps compare meaningfully whatever the third one is.
+    // Discarding that comparison would put `inherit` in the heading slot with
+    // 3rem body text underneath it — a heading smaller than its own paragraph.
     const html = render({
       schemaVersion: SCHEMA_VERSION,
       typography: {
@@ -211,7 +209,7 @@ describe("pairing across scale orderings", () => {
       },
     });
 
-    expect(html).toContain("Párování odd + big");
+    expect(html).toContain("Párování big + small");
   });
 
   it("falls back to document order when nothing can be measured", () => {
@@ -281,31 +279,58 @@ describe("what counts as a measurable size", () => {
 
   it.each([
     ["min", "min(4rem, 10vw)"],
-    ["max", "max(1rem, 2vw)"],
-    ["calc", "calc(100% - 2rem)"],
+    ["max", "max(5rem, 2vw)"],
+    ["calc", "calc(10rem - 8rem)"],
     ["var", "var(--fs-h1)"],
     ["a keyword", "inherit"],
   ])("treats %s as unmeasurable rather than reading a number out of it", (_label, size) => {
-    // Each of these has a number in it that is not the size it renders:
-    // min() caps rather than sets, calc() here goes negative, var() is elsewhere.
+    // Each of these carries a number larger than the plain step beside it, so
+    // reading that number out — as the greedy version did — would crown it.
+    // min() caps rather than sets, calc() here resolves to 2rem, var() is
+    // defined elsewhere entirely.
     const html = render({
       schemaVersion: SCHEMA_VERSION,
-      typography: { first: { size }, second: { size: "0.5rem" } },
+      typography: { plain: { size: "3rem" }, odd: { size } },
     });
 
-    expect(html).toContain("Párování first + second");
+    expect(html).toContain("Párování plain + odd");
   });
 
-  it("measures a clamp by its upper bound, which is the size it grows to", () => {
+  it("measures a clamp by its ceiling, not by the largest number written in it", () => {
+    // The greedy version read 6rem out of the floor and made `hero` the biggest
+    // step. Its ceiling is 2rem, so `title` is.
+    const html = render({
+      schemaVersion: SCHEMA_VERSION,
+      typography: {
+        title: { size: "3rem" },
+        hero: { size: "clamp(6rem, 4vw, 2rem)" },
+        body: { size: "1rem" },
+      },
+    });
+
+    expect(html).toContain("Párování title + body");
+  });
+
+  it("reads the ceiling of a clamp whose floor is itself a function", () => {
+    // A common accessible-fluid pattern: a computed floor, a plain ceiling.
     const html = render({
       schemaVersion: SCHEMA_VERSION,
       typography: {
         body: { size: "1rem" },
-        hero: { size: "clamp(2rem, 4vw, 3.5rem)" },
+        hero: { size: "clamp(max(1rem, 2vw), 5vw, 3.5rem)" },
       },
     });
 
     expect(html).toContain("Párování hero + body");
+  });
+
+  it("refuses a clamp that does not have three arguments", () => {
+    const html = render({
+      schemaVersion: SCHEMA_VERSION,
+      typography: { first: { size: "clamp(1rem, 2rem)" }, second: { size: "0.5rem" } },
+    });
+
+    expect(html).toContain("Párování first + second");
   });
 
   it("gives up on a clamp whose upper bound it cannot read", () => {

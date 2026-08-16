@@ -79,7 +79,30 @@ const UNIT_SCALE: Record<string, number> = {
 };
 
 const BARE_LENGTH = /^(-?[\d.]+)\s*(px|pt|rem|em|ch|%)?$/i;
-const CLAMP = /^clamp\(([^()]*)\)$/i;
+const CLAMP = /^clamp\((.*)\)$/is;
+
+/**
+ * Splits a function's arguments on the commas that belong to it, ignoring those
+ * nested inside another call. `clamp(max(1rem, 2vw), 5vw, 3.5rem)` has three
+ * arguments, not four, and its ceiling is the plain length at the end.
+ */
+function topLevelArguments(text: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i];
+    if (char === "(") depth += 1;
+    else if (char === ")") depth -= 1;
+    else if (char === "," && depth === 0) {
+      parts.push(text.slice(start, i));
+      start = i + 1;
+    }
+  }
+  parts.push(text.slice(start));
+  return parts;
+}
 
 /** A plain length, or nothing. No arithmetic, no functions, no guessing. */
 function lengthOf(text: string): number | undefined {
@@ -119,28 +142,41 @@ function sizeInPx(size: string): number | undefined {
   }
 
   const clamp = CLAMP.exec(value);
-  const upperBound = clamp?.[1]?.split(",").at(-1);
-  return upperBound === undefined ? undefined : lengthOf(upperBound);
+  if (clamp?.[1] === undefined) {
+    return undefined;
+  }
+
+  // A clamp has exactly three arguments. Reading the last of some other number
+  // of them would be guessing at what a malformed value meant.
+  const args = topLevelArguments(clamp[1]);
+  return args.length === 3 ? lengthOf(args[2] ?? "") : undefined;
 }
 
 /**
- * The steps, biggest first — but only when every one of them can be measured.
+ * The measurable steps, biggest first — or nothing when there are fewer than
+ * two of them.
  *
- * A partial measurement is not evidence about the steps it could not read. A
- * scale written through CSS custom properties with one literal step among them
- * would otherwise crown that one literal, however small: `tiny: 0.5rem` beside
- * `h1: var(--fs-h1)` made `tiny` the heading. When anything is unreadable, the
- * order the author wrote is the better guess.
+ * A single measurable step among unreadable ones wins its superlative by having
+ * nobody to lose to: `tiny: 0.5rem` beside `h1: var(--fs-h1)` was crowned the
+ * heading purely for being the only number in sight. Two measurable steps do
+ * compare meaningfully, and that comparison is worth keeping even when a third
+ * step is a keyword — throwing it away would let the keyword take the heading
+ * slot and leave body text larger than the heading above it.
  */
 function measuredSteps(
   steps: readonly ResolvedTypographyToken[],
 ): readonly ResolvedTypographyToken[] {
-  const measured = steps.map((step) => ({ step, size: sizeInPx(step.size) }));
-  if (measured.some((entry) => entry.size === undefined)) {
+  const measured = steps
+    .map((step) => ({ step, size: sizeInPx(step.size) }))
+    .filter((entry): entry is { step: ResolvedTypographyToken; size: number } => {
+      return entry.size !== undefined;
+    });
+
+  if (measured.length < 2) {
     return [];
   }
 
-  return measured.sort((a, b) => (b.size ?? 0) - (a.size ?? 0)).map((entry) => entry.step);
+  return measured.sort((a, b) => b.size - a.size).map((entry) => entry.step);
 }
 
 /**
