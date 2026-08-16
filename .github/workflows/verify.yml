@@ -5,11 +5,13 @@ on:
     branches: [main]
   pull_request:
 
-# A second push to the same branch makes the first run's answer stale, so it is
-# cancelled rather than left to finish and report on code nobody has any more.
+# A superseded pull request run reports on code nobody has any more, so it is
+# cancelled. Pushes to main are not: two merges landing back to back would
+# leave the first commit with no completed answer, which is the one place the
+# history is expected to be green.
 concurrency:
   group: verify-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   verify:
@@ -22,11 +24,11 @@ jobs:
         node: [22, 24]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
           cache: pnpm
