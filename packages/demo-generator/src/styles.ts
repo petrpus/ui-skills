@@ -74,6 +74,36 @@ body {
 }
 .swatch__note { font-size: 0.75rem; color: var(--ui-ink-soft); margin-top: 0.5rem; }
 
+.section__note {
+  font-size: 0.8125rem; color: var(--ui-ink-soft); margin: -0.5rem 0 1rem;
+}
+
+.contrast {
+  width: 100%; border-collapse: separate; border-spacing: 0;
+  background: var(--ui-panel); border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius); overflow: hidden;
+}
+.contrast td { padding: 0.625rem 0.875rem; border-bottom: 1px solid var(--ui-line); }
+.contrast tr:last-child td { border-bottom: 0; }
+.contrast__pair { font-family: var(--ui-mono); font-size: 0.75rem; white-space: nowrap; }
+.contrast__pair span { color: var(--ui-ink); font-weight: 600; }
+.contrast__preview { font-size: 0.875rem; }
+.contrast__preview--none { color: var(--ui-ink-soft); font-style: italic; }
+.contrast__ratio {
+  font-family: var(--ui-mono); font-size: 0.8125rem;
+  text-align: right; white-space: nowrap;
+}
+
+.badge {
+  display: inline-block; font-size: 0.6875rem; font-weight: 600;
+  letter-spacing: 0.04em; padding: 0.125rem 0.5rem; border-radius: 999px;
+  white-space: nowrap;
+}
+.badge--pass { background: #dcfce7; color: #14532d; }
+.badge--partial { background: #fef3c7; color: #713f12; }
+.badge--fail { background: #fee2e2; color: #7f1d1d; }
+.badge--unknown { background: #f4f4f5; color: #52525b; }
+
 .empty {
   color: var(--ui-ink-soft); font-size: 0.9375rem;
   border: 1px dashed var(--ui-line); border-radius: var(--ui-radius); padding: 1.5rem;

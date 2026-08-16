@@ -160,3 +160,73 @@ describe("validateTokens", () => {
     expect(Object.keys(tokens).sort()).toEqual(["color", "name", "schemaVersion"]);
   });
 });
+
+describe("roles", () => {
+  const color = { ink: { value: "#000" }, paper: { value: "#fff" } };
+
+  it("accepts the vocabulary the demo understands", () => {
+    const tokens = validateTokens({
+      schemaVersion: SCHEMA_VERSION,
+      color,
+      roles: { text: "color.ink", surface: "color.paper" },
+    });
+
+    expect(tokens.roles).toEqual({ text: "color.ink", surface: "color.paper" });
+  });
+
+  it("rejects an unknown role and lists the ones it knows", () => {
+    const broken = { schemaVersion: SCHEMA_VERSION, color, roles: { vymyslena: "color.ink" } };
+
+    expect(() => validateTokens(broken)).toThrow(/neznámá role "vymyslena" \(demo umí: surface/);
+  });
+
+  it("rejects a role pointing at something that is not a qualified name", () => {
+    const broken = { schemaVersion: SCHEMA_VERSION, color, roles: { text: "ink" } };
+
+    expect(() => validateTokens(broken)).toThrow(/role musí ukazovat na kvalifikované jméno/);
+  });
+
+  it("rejects a roles section that is not an object", () => {
+    expect(() => validateTokens({ schemaVersion: SCHEMA_VERSION, roles: [] })).toThrow(
+      /skupina rolí musí být objekt/,
+    );
+  });
+});
+
+describe("contrastPairs", () => {
+  const color = { ink: { value: "#000" }, paper: { value: "#fff" } };
+
+  it("accepts a well-formed list", () => {
+    const tokens = validateTokens({
+      schemaVersion: SCHEMA_VERSION,
+      color,
+      contrastPairs: [{ fg: "color.ink", bg: "color.paper" }],
+    });
+
+    expect(tokens.contrastPairs).toEqual([{ fg: "color.ink", bg: "color.paper" }]);
+  });
+
+  it("rejects a section that is not an array", () => {
+    expect(() =>
+      validateTokens({ schemaVersion: SCHEMA_VERSION, contrastPairs: { fg: "a.b", bg: "a.c" } }),
+    ).toThrow(/contrastPairs musí být pole/);
+  });
+
+  it.each([
+    ["fg", { bg: "color.paper" }],
+    ["bg", { fg: "color.ink" }],
+  ])("rejects a pair missing %s, naming its position", (missing, pair) => {
+    const broken = { schemaVersion: SCHEMA_VERSION, color, contrastPairs: [pair] };
+
+    // A plain string is a substring match, which avoids escaping the brackets.
+    expect(() => validateTokens(broken)).toThrow(
+      `contrastPairs[0]: "${missing}" musí být kvalifikované jméno`,
+    );
+  });
+
+  it("rejects an entry that is not an object", () => {
+    const broken = { schemaVersion: SCHEMA_VERSION, color, contrastPairs: ["color.ink"] };
+
+    expect(() => validateTokens(broken)).toThrow(/contrastPairs\[0\]: dvojice musí být objekt/);
+  });
+});

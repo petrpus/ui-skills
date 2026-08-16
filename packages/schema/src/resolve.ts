@@ -1,7 +1,10 @@
 import {
+  type ResolvedContrastPair,
   type ResolvedGroup,
+  type ResolvedRoles,
   type ResolvedToken,
   type ResolvedTokens,
+  type RoleName,
   TOKEN_GROUPS,
   type Token,
   type TokenGroupName,
@@ -118,6 +121,35 @@ function resolveGroup(
 }
 
 /**
+ * Resolves a token named from outside a group — a role or a contrast pair. The
+ * caller's name is in the error, because "role text points nowhere" is a more
+ * useful complaint than "color.ink is missing".
+ */
+function resolveReference(
+  target: string,
+  origin: string,
+  index: ReadonlyMap<string, Token>,
+  cache: Map<string, Resolution>,
+): ResolvedToken {
+  if (!index.has(target)) {
+    throw new TokensError(`odkazuje na neexistující token "${target}"`, origin);
+  }
+
+  const { value, chain } = follow(target, index, cache);
+  const token = index.get(target);
+  const name = target.slice(target.indexOf(".") + 1);
+
+  return {
+    name,
+    qualifiedName: target,
+    value,
+    chain: [...chain],
+    ...(token?.css === undefined ? {} : { css: token.css }),
+    ...(token?.description === undefined ? {} : { description: token.description }),
+  };
+}
+
+/**
  * Turns a validated document into one where every token carries its literal
  * value and the path it took to get there.
  *
@@ -133,6 +165,8 @@ export function resolveTokens(tokens: Tokens): ResolvedTokens {
   const resolved: {
     schemaVersion: number;
     name?: string;
+    roles?: ResolvedRoles;
+    contrastPairs?: readonly ResolvedContrastPair[];
   } & Partial<Record<TokenGroupName, ResolvedGroup>> = {
     schemaVersion: tokens.schemaVersion,
   };
@@ -145,6 +179,21 @@ export function resolveTokens(tokens: Tokens): ResolvedTokens {
     if (tokens[groupName] !== undefined) {
       resolved[groupName] = resolveGroup(groupName, tokens, index, cache);
     }
+  }
+
+  if (tokens.roles !== undefined) {
+    const roles: Partial<Record<RoleName, ResolvedToken>> = {};
+    for (const [role, target] of Object.entries(tokens.roles)) {
+      roles[role as RoleName] = resolveReference(target, `roles.${role}`, index, cache);
+    }
+    resolved.roles = roles;
+  }
+
+  if (tokens.contrastPairs !== undefined) {
+    resolved.contrastPairs = tokens.contrastPairs.map((pair, position) => ({
+      fg: resolveReference(pair.fg, `contrastPairs[${position}].fg`, index, cache),
+      bg: resolveReference(pair.bg, `contrastPairs[${position}].bg`, index, cache),
+    }));
   }
 
   return resolved;

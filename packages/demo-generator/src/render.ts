@@ -1,4 +1,5 @@
 import type { ResolvedGroup, ResolvedToken, ResolvedTokens } from "@ui-skills/schema";
+import { type ContrastCheck, type ContrastReport, reportContrast } from "./contrast.ts";
 import { escapeHtml, isSafeCssValue, section } from "./html.ts";
 import { DEMO_STYLES } from "./styles.ts";
 
@@ -48,6 +49,59 @@ function colorSection(group: ResolvedGroup): string {
   return section("color", "Barvy", `<div class="swatches">\n    ${swatches}\n  </div>`);
 }
 
+/**
+ * AA Large is the narrowest pass — it only holds for large text — so it does not
+ * get the same green as a grade that passes everywhere.
+ */
+const BADGE_TONE = {
+  AAA: "pass",
+  AA: "pass",
+  "AA Large": "partial",
+  fail: "fail",
+} as const;
+
+const SOURCE_LABEL: Record<ContrastReport["source"], string> = {
+  roles: "podle rolí",
+  convention: "podle konvence jmen (role nejsou zadané)",
+  fallback: "proti černé a bílé (role ani konvence nejsou k dispozici)",
+};
+
+function contrastRow(entry: ContrastCheck): string {
+  const safe = isSafeCssValue(entry.fg.value) && isSafeCssValue(entry.bg.value);
+  const preview = safe
+    ? `<td class="contrast__preview" style="background: ${escapeHtml(entry.bg.value)}; color: ${escapeHtml(entry.fg.value)}">Příliš žluťoučký kůň</td>`
+    : '<td class="contrast__preview contrast__preview--none">nelze vykreslit</td>';
+
+  const ratio =
+    entry.ratio === undefined
+      ? '<td class="contrast__ratio">—</td>'
+      : `<td class="contrast__ratio">${entry.ratio.toFixed(2)}:1</td>`;
+
+  const grade =
+    entry.grade === undefined
+      ? '<td><span class="badge badge--unknown">nelze spočítat</span></td>'
+      : `<td><span class="badge badge--${BADGE_TONE[entry.grade]}">${escapeHtml(entry.grade)}</span></td>`;
+
+  return `<tr>
+        <td class="contrast__pair"><span>${escapeHtml(entry.fg.name)}</span> na <span>${escapeHtml(entry.bg.name)}</span></td>
+        ${preview}
+        ${ratio}
+        ${grade}
+      </tr>`;
+}
+
+function contrastSection(report: ContrastReport): string {
+  const rows = report.checks.map(contrastRow).join("\n      ");
+  const body = `<p class="section__note">Dvojice určeny ${escapeHtml(SOURCE_LABEL[report.source])}.</p>
+  <table class="contrast">
+    <tbody>
+      ${rows}
+    </tbody>
+  </table>`;
+
+  return section("contrast", "Kontrast", body);
+}
+
 function countTokens(tokens: ResolvedTokens): number {
   return tokens.color?.length ?? 0;
 }
@@ -71,7 +125,11 @@ function tokenCountLabel(count: number): string {
 export function renderDemo(tokens: ResolvedTokens): string {
   const title = tokens.name ?? "Design systém";
   const count = countTokens(tokens);
-  const sections = [tokens.color ? colorSection(tokens.color) : ""].filter(Boolean);
+  const contrast = reportContrast(tokens);
+  const sections = [
+    tokens.color ? colorSection(tokens.color) : "",
+    contrast ? contrastSection(contrast) : "",
+  ].filter(Boolean);
 
   const body =
     sections.length > 0
