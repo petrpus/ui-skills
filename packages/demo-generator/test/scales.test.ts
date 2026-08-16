@@ -281,8 +281,6 @@ describe("what counts as a measurable size", () => {
     ["min", "min(4rem, 10vw)"],
     ["max", "max(5rem, 2vw)"],
     ["calc", "calc(10rem - 8rem)"],
-    ["var", "var(--fs-h1)"],
-    ["a keyword", "inherit"],
   ])("treats %s as unmeasurable rather than reading a number out of it", (_label, size) => {
     // Each of these carries a number larger than the plain step beside it, so
     // reading that number out — as the greedy version did — would crown it.
@@ -291,6 +289,30 @@ describe("what counts as a measurable size", () => {
     const html = render({
       schemaVersion: SCHEMA_VERSION,
       typography: { plain: { size: "3rem" }, odd: { size } },
+    });
+
+    expect(html).toContain("Párování plain + odd");
+  });
+
+  it("does not read a digit out of a custom property's name", () => {
+    // `var(--fs-h1)` ends in a 1, and a reader looking for numbers finds it.
+    // The partner is deliberately smaller than that stray digit, so a version
+    // that harvests it crowns the wrong step.
+    const html = render({
+      schemaVersion: SCHEMA_VERSION,
+      typography: { plain: { size: "0.5px" }, odd: { size: "var(--fs-h1)" } },
+    });
+
+    expect(html).toContain("Párování plain + odd");
+  });
+
+  it("treats a bare keyword as unmeasurable", () => {
+    // Documentation rather than a regression guard: a keyword carries no digits,
+    // so no version of this ever read a size out of it. It is here so the
+    // behaviour is stated somewhere.
+    const html = render({
+      schemaVersion: SCHEMA_VERSION,
+      typography: { plain: { size: "3rem" }, odd: { size: "inherit" } },
     });
 
     expect(html).toContain("Párování plain + odd");
