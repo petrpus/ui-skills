@@ -106,8 +106,8 @@ function readOrCreateTokens(path: string): { raw: string; created: boolean } {
       return { raw: readFileSync(path, "utf8"), created: false };
     } catch {
       throw new Error(
-        `na cestě ${path} něco je, ale nejde to přečíst — nejspíš symlink, ` +
-          `který nikam nevede. Nic jsem nepřepsal.`,
+        `na cestě ${path} něco je, ale nejde to přečíst — symlink, který nikam ` +
+          `nevede, nebo něco, co tam přibylo mezitím. Nic jsem nepřepsal.`,
       );
     }
   }

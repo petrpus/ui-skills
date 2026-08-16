@@ -139,7 +139,7 @@ describe("first run in a project", () => {
     const tokensPath = join(dir, "tokens.json");
     symlinkSync(join(dir, "nikde.json"), tokensPath);
 
-    expect(() => run([tokensPath])).toThrow(/symlink, který nikam nevede/);
+    expect(() => run([tokensPath])).toThrow(/nejde to přečíst/);
     expect(lstatSync(tokensPath).isSymbolicLink()).toBe(true);
   });
 
