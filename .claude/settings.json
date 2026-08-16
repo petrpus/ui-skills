@@ -85,5 +85,5 @@
   "enabledPlugins": {
     "claude-code-harness@claude-code-harness": true
   },
-  "_comment": "Baseline permissions for ui-skills, derived from claude-code-harness templates/project-settings.template.json. Paths adapted to this repo's layout (skills/, commands/, packages/, bin/, spec/)."
+  "_comment": "Baseline permissions for ui-skills, derived from claude-code-harness templates/project-settings.template.json. Paths adapted to this repo's layout (skills/, commands/, packages/, bin/, docs/)."
 }
