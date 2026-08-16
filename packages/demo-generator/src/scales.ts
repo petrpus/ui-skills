@@ -78,52 +78,105 @@ const UNIT_SCALE: Record<string, number> = {
   "%": 0.16,
 };
 
-const LENGTH = /(-?[\d.]+)\s*(px|pt|rem|em|ch|%)?\b/gi;
+const BARE_LENGTH = /^(-?[\d.]+)\s*(px|pt|rem|em|ch|%)?$/i;
+const CLAMP = /^clamp\((.*)\)$/is;
+
+/**
+ * Splits a function's arguments on the commas that belong to it, ignoring those
+ * nested inside another call. `clamp(max(1rem, 2vw), 5vw, 3.5rem)` has three
+ * arguments, not four, and its ceiling is the plain length at the end.
+ */
+function topLevelArguments(text: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i];
+    if (char === "(") depth += 1;
+    else if (char === ")") depth -= 1;
+    else if (char === "," && depth === 0) {
+      parts.push(text.slice(start, i));
+      start = i + 1;
+    }
+  }
+  parts.push(text.slice(start));
+  return parts;
+}
+
+/** A plain length, or nothing. No arithmetic, no functions, no guessing. */
+function lengthOf(text: string): number | undefined {
+  const match = BARE_LENGTH.exec(text.trim());
+  if (match?.[1] === undefined) {
+    return undefined;
+  }
+
+  const amount = Number.parseFloat(match[1]);
+  if (Number.isNaN(amount)) {
+    return undefined;
+  }
+
+  const unit = match[2]?.toLowerCase();
+  return amount * (unit === undefined ? 1 : (UNIT_SCALE[unit] ?? 1));
+}
 
 /**
  * Reads a font size well enough to compare two of them.
  *
- * Takes the largest length it can find rather than insisting the whole value be
- * one: a fluid step is written `clamp(2rem, 4vw, 3.5rem)`, and its upper bound
- * is what decides whether it is the biggest step on the scale. Viewport units
- * inside it are simply skipped — an approximation, but it keeps a fluid heading
- * from becoming unmeasurable and dragging the ordering down with it.
+ * A plain length measures as itself. `clamp(2rem, 4vw, 3.5rem)` measures as its
+ * upper bound, which is what decides whether a fluid step is the biggest on the
+ * scale. Everything else — `calc()`, `min()`, `max()`, `var()`, a keyword —
+ * measures as nothing.
  *
- * Undefined only when there is no length at all, e.g. a bare keyword.
+ * An earlier version took the largest number appearing anywhere in the string.
+ * That read `min(4rem, 10vw)` as 64 when a narrow window renders it at 37, and
+ * `calc(100% - 2rem)` as 32 when the result is negative. A number sitting inside
+ * an expression is not the size the expression produces.
  */
 function sizeInPx(size: string): number | undefined {
-  const found = [...size.matchAll(LENGTH)]
-    .map(([, amount, unit]) => {
-      const parsed = Number.parseFloat(amount ?? "");
-      if (Number.isNaN(parsed)) {
-        return undefined;
-      }
-      const key = unit?.toLowerCase();
-      return parsed * (key === undefined ? 1 : (UNIT_SCALE[key] ?? 1));
-    })
-    .filter((value): value is number => value !== undefined);
+  const value = size.trim();
 
-  return found.length > 0 ? Math.max(...found) : undefined;
+  const bare = lengthOf(value);
+  if (bare !== undefined) {
+    return bare;
+  }
+
+  const clamp = CLAMP.exec(value);
+  if (clamp?.[1] === undefined) {
+    return undefined;
+  }
+
+  // A clamp has exactly three arguments. Reading the last of some other number
+  // of them would be guessing at what a malformed value meant.
+  const args = topLevelArguments(clamp[1]);
+  return args.length === 3 ? lengthOf(args[2] ?? "") : undefined;
 }
 
 /**
- * The steps whose size can be measured, biggest first.
+ * The measurable steps, biggest first — or nothing when there are fewer than
+ * two of them.
  *
- * Only these can be called largest or smallest with a straight face. A step
- * written `inherit` is not evidence of being either, so it never wins a
- * superlative — it can still be picked, but only once measurement has nothing
- * to say.
+ * A single measurable step among unreadable ones wins its superlative by having
+ * nobody to lose to: `tiny: 0.5rem` beside `h1: var(--fs-h1)` was crowned the
+ * heading purely for being the only number in sight. Two measurable steps do
+ * compare meaningfully, and that comparison is worth keeping even when a third
+ * step is a keyword — throwing it away would let the keyword take the heading
+ * slot and leave body text larger than the heading above it.
  */
 function measuredSteps(
   steps: readonly ResolvedTypographyToken[],
 ): readonly ResolvedTypographyToken[] {
-  return steps
+  const measured = steps
     .map((step) => ({ step, size: sizeInPx(step.size) }))
     .filter((entry): entry is { step: ResolvedTypographyToken; size: number } => {
       return entry.size !== undefined;
-    })
-    .sort((a, b) => b.size - a.size)
-    .map((entry) => entry.step);
+    });
+
+  if (measured.length < 2) {
+    return [];
+  }
+
+  return measured.sort((a, b) => b.size - a.size).map((entry) => entry.step);
 }
 
 /**
@@ -134,25 +187,31 @@ function measuredSteps(
  * smallest step as a heading for everyone who writes theirs ascending.
  *
  * The body is the step named for it (`body`, `base`, `text`), falling back to
- * the smallest measurable one. When the two would be the same step, the next
- * distinct one is used instead of dropping the pairing: a two-step scale is
- * exactly the case that most needs showing.
+ * the smallest. When the two would be the same step, the next distinct one is
+ * used instead of dropping the pairing: a two-step scale is exactly the case
+ * that most needs showing.
+ *
+ * When a size cannot be read the pairing is a guess either way — a step sized
+ * `var(--fs-h1)` has no size in this document to render at — so it is made from
+ * the order the author wrote rather than dropped.
  */
 function pairing(steps: readonly ResolvedTypographyToken[]): string {
   if (steps.length < 2) {
     return "";
   }
 
+  // Sorted biggest-first when every size could be read, otherwise the order the
+  // author wrote. Both are then read the same way: front is the heading, back is
+  // the body — which on a measured scale means largest and smallest, and on an
+  // unmeasured one means first and last written.
   const measured = measuredSteps(steps);
+  const ordered = measured.length > 0 ? measured : steps;
   const bodyNames = ["body", "base", "text"];
 
-  // Largest measurable step, or the first written when nothing can be measured.
-  const heading = measured[0] ?? steps[0];
-  const named = steps.find((step) => bodyNames.includes(step.name.toLowerCase()));
+  const heading = ordered[0];
+  const named = ordered.find((step) => bodyNames.includes(step.name.toLowerCase()));
   const body =
-    named !== undefined && named !== heading
-      ? named
-      : (measured.findLast((step) => step !== heading) ?? steps.find((step) => step !== heading));
+    named !== undefined && named !== heading ? named : ordered.findLast((step) => step !== heading);
 
   if (heading === undefined || body === undefined) {
     return "";
