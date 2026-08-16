@@ -1,6 +1,7 @@
 import { resolveTokens, SCHEMA_VERSION, validateTokens } from "@ui-skills/schema";
 import { describe, expect, it } from "vitest";
 import { renderDemo } from "../src/render.ts";
+import { tokenVar } from "../src/theme.ts";
 
 function render(document: unknown): string {
   return renderDemo(resolveTokens(validateTokens(document)));
@@ -89,13 +90,50 @@ describe("token values across the two modes", () => {
     expect(render(withDark)).toContain("tmavý režim: #fafafa");
   });
 
+  it.each([
+    ["a semicolon", "#000; } html { background: red"],
+    ["a closing brace", "red } html { background: pink"],
+    ["a closing style tag", "red</style><style>html{background:red}"],
+    ["a newline", "red;\n} html { background: red"],
+  ])("keeps a dark value containing %s out of the stylesheet", (_label, dark) => {
+    const html = render({
+      schemaVersion: SCHEMA_VERSION,
+      color: { evil: { value: "#000", dark: { value: dark } } },
+    });
+    const stylesheet = /<style>([\s\S]*?)<\/style>/.exec(html)?.[1] ?? "";
+
+    expect(stylesheet).not.toContain("background: red");
+    expect(stylesheet).not.toContain("background: pink");
+    expect(html.match(/<style>/g) ?? []).toHaveLength(1);
+  });
+
+  it("gives two token names that escape alike their own property", () => {
+    // `_1a` could be code point 0x1a, or 0x1 followed by the letter a. With an
+    // open-ended escape both tokens claimed one property and the later one
+    // silently repainted the earlier.
+    const tokens = resolveTokens(
+      validateTokens({
+        schemaVersion: SCHEMA_VERSION,
+        color: {
+          "\u0001a": { value: "#111111" },
+          "\u001a": { value: "#222222" },
+        },
+      }),
+    );
+    const [first, second] = tokens.color ?? [];
+
+    expect(first).toBeDefined();
+    expect(second).toBeDefined();
+    expect(tokenVar(first as never)).not.toBe(tokenVar(second as never));
+  });
+
   it("escapes a token name that is not a valid property name", () => {
     const html = render({
       schemaVersion: SCHEMA_VERSION,
       color: { "a b": { value: "#000", dark: { value: "#fff" } } },
     });
 
-    expect(html).toContain("--t-color-a_20b");
+    expect(html).toContain("--t-color-a_20_b");
     expect(html).not.toContain("--t-color-a b");
   });
 
@@ -106,9 +144,13 @@ describe("token values across the two modes", () => {
         sneaky: { value: "#000", dark: { value: 'url("https://evil.example.com/x.png")' } },
       },
     });
+    // Asserting the escaped text is absent from the whole document would pass
+    // for any input containing a quote, since escapeHtml handles that
+    // everywhere. The claim worth making is that it never becomes CSS.
+    const stylesheet = /<style>([\s\S]*?)<\/style>/.exec(html)?.[1] ?? "";
 
-    expect(html).not.toContain('evil.example.com/x.png"');
-    expect(html).not.toMatch(/--t-color-sneaky: url/);
+    expect(stylesheet).not.toContain("evil.example.com");
+    expect(stylesheet).not.toMatch(/--t-color-sneaky: url/);
   });
 });
 
@@ -116,9 +158,24 @@ describe("contrast in both modes", () => {
   it("measures each pair twice and shows the one that applies", () => {
     const html = render(withDark);
 
-    expect(html).toContain('class="only-light"');
-    expect(html).toContain('class="only-dark"');
-    expect(html).toContain("html:has(#theme-dark:checked) .only-light { display: none; }");
+    expect(html).toContain('class="mode mode--light"');
+    expect(html).toContain('class="mode mode--dark"');
+    expect(html).toContain("html:has(#theme-dark:checked) .mode--light { display: none; }");
+  });
+
+  it("puts nothing but the mode on the element whose visibility it decides", () => {
+    // The cascade decides this, and a same-specificity rule written later in the
+    // stylesheet wins. Keeping the wrapper free of layout classes is what makes
+    // one rule enough — previously the badge carried both, and a later
+    // `.contrast__grade { display: block }` un-hid the mode that should be gone.
+    const html = render(withDark);
+
+    const classAttributes = [...html.matchAll(/class="([^"]*mode--[^"]*)"/g)].map((m) => m[1]);
+
+    expect(classAttributes.length).toBeGreaterThan(0);
+    for (const attribute of classAttributes) {
+      expect(["mode mode--light", "mode mode--dark"]).toContain(attribute);
+    }
   });
 
   it("recomputes the ratio for the dark faces rather than reprinting the light one", () => {
@@ -127,13 +184,16 @@ describe("contrast in both modes", () => {
     const html = render(withDark);
 
     expect(html).toContain("17.72:1");
-    expect(html).toMatch(/only-dark">1[0-9]\.\d\d:1/);
+    expect(html).toMatch(/mode mode--dark">1[0-9]\.\d\d:1/);
   });
 
   it("writes a single measurement when there is no dark mode to compare", () => {
     const html = render(lightOnly);
 
-    expect(html).not.toContain('class="only-dark"');
+    // Matching the bare class name would hit the stylesheet, which always
+    // carries the rules whether or not any element uses them.
+    expect(html).not.toMatch(/class="[^"]*mode--/);
+    expect(html).toContain('class="mode"');
   });
 
   it("gives the badge its own grade per mode", () => {
@@ -147,7 +207,7 @@ describe("contrast in both modes", () => {
     });
 
     // 4.54:1 in light is AA; the dark pair is far higher and reaches AAA.
-    expect(html).toMatch(/only-light contrast__grade">[^<]*<span[^>]*>AA</);
-    expect(html).toMatch(/only-dark contrast__grade">[^<]*<span[^>]*>AAA</);
+    expect(html).toMatch(/mode--light">4\.54:1<span class="contrast__grade"><span[^>]*>AA</);
+    expect(html).toMatch(/mode--dark">1[0-9]\.\d\d:1<span class="contrast__grade"><span[^>]*>AAA</);
   });
 });

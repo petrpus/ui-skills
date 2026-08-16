@@ -17,9 +17,12 @@ export function tokenVar(token: ResolvedToken): string {
   const separator = token.qualifiedName.indexOf(".");
   const group = token.qualifiedName.slice(0, separator);
   const name = token.qualifiedName.slice(separator + 1);
+  // Delimited on both sides: an open-ended `_1a` cannot be told apart from
+  // `_1` followed by a literal `a`, which is enough for two different tokens to
+  // claim one property and for the later one to silently repaint the earlier.
   const safe = name.replace(
     /[^a-zA-Z0-9-]/g,
-    (char) => `_${char.codePointAt(0)?.toString(16) ?? "0"}`,
+    (char) => `_${char.codePointAt(0)?.toString(16) ?? "0"}_`,
   );
   return `--t-${group}-${safe}`;
 }

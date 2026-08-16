@@ -74,17 +74,24 @@ const SOURCE_LABEL: Record<ContrastReport["source"], string> = {
   fallback: "proti černé a bílé (role ani konvence nejsou k dispozici)",
 };
 
-function measurement(entry: ContrastCheck, mode: "light" | "dark"): string {
-  const only = mode === "light" ? "only-light" : "only-dark";
+/**
+ * One measurement, wrapped in a single element that carries nothing but its
+ * mode.
+ *
+ * The wrapper exists so that showing and hiding is decided by one class on one
+ * element. An earlier version put the mode class on the inner parts alongside
+ * their layout classes, and a same-specificity layout rule written later in the
+ * stylesheet quietly won — leaving both modes' badges on screen at once.
+ */
+function measurement(entry: ContrastCheck, mode: "light" | "dark" | undefined): string {
   const ratio = entry.ratio === undefined ? "—" : `${entry.ratio.toFixed(2)}:1`;
   const grade =
     entry.grade === undefined
       ? '<span class="badge badge--unknown">nelze spočítat</span>'
       : `<span class="badge badge--${BADGE_TONE[entry.grade]}">${escapeHtml(entry.grade)}</span>`;
+  const modeClass = mode === undefined ? "" : ` mode--${mode}`;
 
-  return `<span class="${only}">${ratio}</span>`.concat(
-    `<span class="${only} contrast__grade">${grade}</span>`,
-  );
+  return `<span class="mode${modeClass}">${ratio}<span class="contrast__grade">${grade}</span></span>`;
 }
 
 function contrastRow(entry: ContrastCheck, darkEntry: ContrastCheck | undefined): string {
@@ -100,7 +107,7 @@ function contrastRow(entry: ContrastCheck, darkEntry: ContrastCheck | undefined)
   // there is no script, by design.
   const numbers = darkEntry
     ? `${measurement(entry, "light")}${measurement(darkEntry, "dark")}`
-    : measurement(entry, "light").replaceAll("only-light", "");
+    : measurement(entry, undefined);
 
   return `<tr>
         <td class="contrast__pair"><span>${escapeHtml(entry.fg.name)}</span> na <span>${escapeHtml(entry.bg.name)}</span></td>
@@ -109,9 +116,17 @@ function contrastRow(entry: ContrastCheck, darkEntry: ContrastCheck | undefined)
       </tr>`;
 }
 
+function pairKey(entry: ContrastCheck): string {
+  return `${entry.fg.qualifiedName}|${entry.bg.qualifiedName}`;
+}
+
 function contrastSection(report: ContrastReport, darkReport: ContrastReport | undefined): string {
+  // Matched by which tokens the pair is, not by where it sits in the list. The
+  // two reports happen to come out in the same order today, and relying on that
+  // would put a light ratio next to the wrong dark one the day they diverge.
+  const darkByPair = new Map((darkReport?.checks ?? []).map((entry) => [pairKey(entry), entry]));
   const rows = report.checks
-    .map((entry, position) => contrastRow(entry, darkReport?.checks[position]))
+    .map((entry) => contrastRow(entry, darkByPair.get(pairKey(entry))))
     .join("\n      ");
   const body = `<p class="section__note">Dvojice určeny ${escapeHtml(SOURCE_LABEL[report.source])}.</p>
   <table class="contrast">
