@@ -31,6 +31,9 @@ const STEP_FRACTION = { small: 0.25, middle: 0.5, large: 1 } as const;
  * Proportional, not by fixed index: a fixed index made `small` and `middle`
  * land on the same step of a three-step scale, so the smallest value was never
  * used and two visibly different measurements came out identical.
+ *
+ * A two-step scale cannot yield three distinct values, and there `middle` shares
+ * with `large`. That is arithmetic, not a bug to fix later.
  */
 function step(values: readonly string[], position: keyof typeof STEP_FRACTION): Value {
   if (values.length === 0) {
