@@ -8,7 +8,10 @@ import {
   TokensError,
 } from "./types.ts";
 
-const TOKEN_KEYS = new Set(["value", "description"]);
+const TOKEN_KEYS = new Set(["value", "ref", "css", "description"]);
+
+const CSS_CUSTOM_PROPERTY = /^--[a-zA-Z0-9_-]+$/;
+const QUALIFIED_NAME = /^[^.]+\.[^.]+$/;
 
 function isRecord(input: unknown): input is Record<string, unknown> {
   return typeof input === "object" && input !== null && !Array.isArray(input);
@@ -28,15 +31,37 @@ function validateToken(raw: unknown, path: string): Token {
     }
   }
 
-  const { value, description } = raw;
-  if (typeof value !== "string" || value.trim() === "") {
-    throw new TokensError('chybí neprázdná hodnota "value"', path);
+  const { value, ref, css, description } = raw;
+
+  if (value !== undefined && ref !== undefined) {
+    throw new TokensError('token má "value" i "ref" — smí mít právě jedno', path);
   }
   if (description !== undefined && typeof description !== "string") {
     throw new TokensError('"description" musí být řetězec', path);
   }
+  if (css !== undefined) {
+    if (typeof css !== "string" || !CSS_CUSTOM_PROPERTY.test(css)) {
+      throw new TokensError('"css" musí být CSS custom property, např. "--color-primary"', path);
+    }
+  }
 
-  return description === undefined ? { value } : { value, description };
+  const meta = {
+    ...(css === undefined ? {} : { css: css as string }),
+    ...(description === undefined ? {} : { description: description as string }),
+  };
+
+  if (ref !== undefined) {
+    if (typeof ref !== "string" || !QUALIFIED_NAME.test(ref)) {
+      throw new TokensError('"ref" musí být kvalifikované jméno, např. "color.blue-600"', path);
+    }
+    return { ref, ...meta };
+  }
+
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new TokensError('chybí neprázdná hodnota "value" nebo odkaz "ref"', path);
+  }
+
+  return { value, ...meta };
 }
 
 function validateGroup(raw: unknown, path: string): TokenGroup {

@@ -1,8 +1,13 @@
-import { SCHEMA_VERSION, type Tokens } from "@ui-skills/schema";
+import { resolveTokens, SCHEMA_VERSION, validateTokens } from "@ui-skills/schema";
 import { describe, expect, it } from "vitest";
 import { renderDemo } from "../src/render.ts";
 
-const tokens: Tokens = {
+/** Goes through the real validate → resolve path, so the tests can't drift from it. */
+function render(document: unknown): string {
+  return renderDemo(resolveTokens(validateTokens(document)));
+}
+
+const doc = {
   schemaVersion: SCHEMA_VERSION,
   name: "Prorate",
   color: {
@@ -13,7 +18,7 @@ const tokens: Tokens = {
 
 describe("renderDemo", () => {
   it("shows the name and the value of every colour token", () => {
-    const html = renderDemo(tokens);
+    const html = render(doc);
 
     expect(html).toContain("primary");
     expect(html).toContain("#2563eb");
@@ -22,21 +27,21 @@ describe("renderDemo", () => {
   });
 
   it("shows a token description when there is one", () => {
-    expect(renderDemo(tokens)).toContain("Základní pozadí");
+    expect(render(doc)).toContain("Základní pozadí");
   });
 
   it("uses the system name as the page title", () => {
-    expect(renderDemo(tokens)).toContain("<title>Prorate</title>");
+    expect(render(doc)).toContain("<title>Prorate</title>");
   });
 
   it("falls back to a generic title when the system has no name", () => {
-    const { name: _dropped, ...unnamed } = tokens;
+    const { name: _dropped, ...unnamed } = doc;
 
-    expect(renderDemo(unnamed)).toContain("<title>Design systém</title>");
+    expect(render(unnamed)).toContain("<title>Design systém</title>");
   });
 
   it("emits a self-contained document with no external resource", () => {
-    const html = renderDemo(tokens);
+    const html = render(doc);
 
     expect(html).not.toMatch(/(?:src|href)\s*=\s*["']https?:/i);
     expect(html).not.toMatch(/<script/i);
@@ -45,25 +50,23 @@ describe("renderDemo", () => {
   });
 
   it("carries stable section anchors", () => {
-    expect(renderDemo(tokens)).toContain('data-demo-section="color"');
+    expect(render(doc)).toContain('data-demo-section="color"');
   });
 
   it("omits a section the tokens do not cover instead of rendering an empty heading", () => {
-    const { color: _dropped, ...withoutColor } = tokens;
-    const html = renderDemo(withoutColor);
+    const { color: _dropped, ...withoutColor } = doc;
+    const html = render(withoutColor);
 
     expect(html).not.toContain('data-demo-section="color"');
     expect(html).toContain("Zatím žádné tokeny");
   });
 
   it("omits the colour section when the group is present but empty", () => {
-    const html = renderDemo({ ...tokens, color: {} });
-
-    expect(html).not.toContain('data-demo-section="color"');
+    expect(render({ ...doc, color: {} })).not.toContain('data-demo-section="color"');
   });
 
   it("escapes token names and values so a document cannot inject markup", () => {
-    const hostile = renderDemo({
+    const hostile = render({
       schemaVersion: SCHEMA_VERSION,
       color: { '"><img src=x>': { value: "<b>#fff</b>" } },
     });
@@ -74,7 +77,7 @@ describe("renderDemo", () => {
   });
 
   it("refuses to inline a value that could escape its CSS declaration", () => {
-    const hostile = renderDemo({
+    const hostile = render({
       schemaVersion: SCHEMA_VERSION,
       color: { evil: { value: "red; } body { display: none" } },
     });
@@ -101,10 +104,7 @@ describe("renderDemo", () => {
     ["fullwidth parens", "url（//evil.example.com/track.png）"],
     ["css comment", "red /* } body { display:none */"],
   ])("keeps %s out of the stylesheet, so the file still opens offline", (_label, value) => {
-    const html = renderDemo({
-      schemaVersion: SCHEMA_VERSION,
-      color: { sneaky: { value } },
-    });
+    const html = render({ schemaVersion: SCHEMA_VERSION, color: { sneaky: { value } } });
 
     expect(html).not.toMatch(/style="[^"]*evil\.example\.com/i);
     expect(html).not.toMatch(/style="[^"]*(?:url|image-set|cross-fade)/i);
@@ -134,27 +134,72 @@ describe("renderDemo", () => {
     ["inset shadow", "inset 0 1px 2px rgba(0,0,0,.2)"],
     ["multi shadow", "0 1px 2px rgba(0,0,0,.08), 0 8px 24px rgba(0,0,0,.12)"],
   ])("still paints a swatch for a legitimate %s value", (_label, value) => {
-    const html = renderDemo({
-      schemaVersion: SCHEMA_VERSION,
-      color: { ok: { value } },
-    });
-
-    expect(html).toMatch(/<span style="background: /);
+    expect(render({ schemaVersion: SCHEMA_VERSION, color: { ok: { value } } })).toMatch(
+      /<span style="background: /,
+    );
   });
 
   it("counts tokens with the right Czech plural form", () => {
-    const one = renderDemo({ schemaVersion: SCHEMA_VERSION, color: { a: { value: "#000" } } });
-    const three = renderDemo({
+    const one = render({ schemaVersion: SCHEMA_VERSION, color: { a: { value: "#000" } } });
+    const three = render({
       schemaVersion: SCHEMA_VERSION,
       color: { a: { value: "#000" }, b: { value: "#111" }, c: { value: "#222" } },
     });
 
     expect(one).toContain("1 token<");
     expect(three).toContain("3 tokeny<");
-    expect(renderDemo(tokens)).toContain("2 tokeny<");
+    expect(render(doc)).toContain("2 tokeny<");
   });
 
   it("is deterministic, so regenerating an unchanged system produces no diff", () => {
-    expect(renderDemo(tokens)).toBe(renderDemo(tokens));
+    expect(render(doc)).toBe(render(doc));
+  });
+});
+
+describe("renderDemo with references", () => {
+  const withRefs = {
+    schemaVersion: SCHEMA_VERSION,
+    color: {
+      "blue-600": { value: "#2563eb" },
+      brand: { ref: "color.blue-600" },
+      primary: { ref: "color.brand", css: "--color-primary" },
+    },
+  };
+
+  it("paints a semantic token with the value it resolves to", () => {
+    expect(render(withRefs)).toContain('<span style="background: #2563eb">');
+  });
+
+  it("shows the whole trail from a semantic token to its literal", () => {
+    const html = render(withRefs);
+
+    expect(html).toContain("color.brand → color.blue-600");
+  });
+
+  it("shows no trail for a primitive, which has nowhere to point", () => {
+    const html = render({
+      schemaVersion: SCHEMA_VERSION,
+      color: { "blue-600": { value: "#2563eb" } },
+    });
+
+    // Matching the class name alone would hit the stylesheet, which always
+    // carries the rule whether or not any swatch uses it.
+    expect(html).not.toContain('<div class="swatch__chain">');
+  });
+
+  it("shows the CSS custom property a token maps to", () => {
+    expect(render(withRefs)).toContain("--color-primary");
+  });
+
+  it("escapes a hostile ref name on its way into the trail", () => {
+    const html = render({
+      schemaVersion: SCHEMA_VERSION,
+      color: {
+        '"><img src=x>': { value: "#fff" },
+        alias: { ref: 'color."><img src=x>' },
+      },
+    });
+
+    expect(html).not.toContain("<img src=x>");
   });
 });
