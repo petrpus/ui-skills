@@ -50,9 +50,15 @@ html:has(#theme-dark:checked) {
 html:has(#theme-dark:checked) .theme__knob { transform: translateX(1rem); }
 .theme__input:focus-visible + .theme .theme__track { outline: 2px solid var(--ui-ink); outline-offset: 2px; }
 
-.mode--dark { display: none; }
-html:has(#theme-dark:checked) .mode--light { display: none; }
-html:has(#theme-dark:checked) .mode--dark { display: block; }
+/*
+ * Scoped to their container rather than left as bare class rules. A later
+ * `.mode { display: … }` written for spacing would otherwise tie on specificity
+ * and win on source order, which is precisely how both modes ended up visible
+ * at once the first time.
+ */
+.contrast__ratio .mode--dark { display: none; }
+html:has(#theme-dark:checked) .contrast__ratio .mode--light { display: none; }
+html:has(#theme-dark:checked) .contrast__ratio .mode--dark { display: block; }
 .contrast__grade { display: block; margin-top: 0.25rem; }
 
 body {

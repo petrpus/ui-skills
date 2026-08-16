@@ -160,7 +160,9 @@ describe("contrast in both modes", () => {
 
     expect(html).toContain('class="mode mode--light"');
     expect(html).toContain('class="mode mode--dark"');
-    expect(html).toContain("html:has(#theme-dark:checked) .mode--light { display: none; }");
+    expect(html).toContain(
+      "html:has(#theme-dark:checked) .contrast__ratio .mode--light { display: none; }",
+    );
   });
 
   it("puts nothing but the mode on the element whose visibility it decides", () => {
