@@ -98,6 +98,8 @@ describe("renderDemo", () => {
     ["cross-fade", 'cross-fade("https://evil.example.com/track.png")'],
     ["css-escaped url", "\\75 rl(https://evil.example.com/track.png)"],
     ["unknown function", "totally-new-fetcher(https://evil.example.com/track.png)"],
+    ["fullwidth parens", "url（//evil.example.com/track.png）"],
+    ["css comment", "red /* } body { display:none */"],
   ])("keeps %s out of the stylesheet, so the file still opens offline", (_label, value) => {
     const html = renderDemo({
       schemaVersion: SCHEMA_VERSION,
@@ -121,6 +123,16 @@ describe("renderDemo", () => {
     ["custom property", "var(--color-primary)"],
     ["colour mix", "color-mix(in oklch, red 50%, blue)"],
     ["calc", "calc(100% - 2rem)"],
+    ["custom property with underscore", "var(--brand_primary)"],
+    // Forms #11 will render with this same guard — spacing, radii and shadows
+    // must not be rejected by a rule written with colours in mind.
+    ["length", "8px"],
+    ["negative length", "-0.5rem"],
+    ["percentage", "50%"],
+    ["clamped length", "clamp(0.5rem, 1vw, 1rem)"],
+    ["shadow", "0 1px 2px rgba(0,0,0,.08)"],
+    ["inset shadow", "inset 0 1px 2px rgba(0,0,0,.2)"],
+    ["multi shadow", "0 1px 2px rgba(0,0,0,.08), 0 8px 24px rgba(0,0,0,.12)"],
   ])("still paints a swatch for a legitimate %s value", (_label, value) => {
     const html = renderDemo({
       schemaVersion: SCHEMA_VERSION,

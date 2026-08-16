@@ -39,6 +39,19 @@ const ALLOWED_CSS_FUNCTIONS = new Set([
 const FUNCTION_CALL = /(-{0,2}[a-z][a-z0-9-]*)\s*\(/gi;
 
 /**
+ * Characters a colour, length or shadow value can be spelled with. An allowlist
+ * rather than a list of banned characters, so the guard never rests on reasoning
+ * about which exotic character a browser's CSS tokenizer happens to ignore —
+ * fullwidth parens, for one, look like a function call to nobody and to nothing,
+ * but proving that takes a walk through the CSS syntax spec.
+ *
+ * Deliberately excluded: quotes and colons (every URL scheme needs one),
+ * backslashes (a CSS escape can spell a function name past a textual check),
+ * braces and semicolons (they end the declaration).
+ */
+const ALLOWED_VALUE_CHARS = /^[a-z0-9 \t.,%#+*\/()_-]*$/i;
+
+/**
  * Decides whether a token value may be inlined into a `style` attribute.
  *
  * Escaping is not enough here. HTML escaping stops the value from breaking out
@@ -46,14 +59,12 @@ const FUNCTION_CALL = /(-{0,2}[a-z][a-z0-9-]*)\s*\(/gi;
  * value that fetches a remote image turns a file whose whole promise is "opens
  * offline" into one that phones home.
  *
- * Refused, in order: anything that could end the declaration or open a comment;
- * backslashes, because a CSS escape can spell a function name past any textual
- * check (`\75 rl(…)` is `url(…)`); quotes, which the string-argument fetchers
- * depend on; colons, which every URL scheme needs; and finally any function call
- * outside the allowlist above.
+ * Refused, in order: any character outside the allowlist above, a CSS comment
+ * opener (both of its characters are legal on their own), and finally any
+ * function call whose name is not one a design token plausibly needs.
  */
 export function isSafeCssValue(value: string): boolean {
-  if (/[{};:\\]|<\/|\/\*|["']/.test(value)) {
+  if (!ALLOWED_VALUE_CHARS.test(value) || value.includes("/*")) {
     return false;
   }
 
