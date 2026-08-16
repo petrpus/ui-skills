@@ -149,7 +149,13 @@ export function reportContrast(tokens: ResolvedTokens): ContrastReport | undefin
   // disappear because of an incidental match.
   const key = (entry: ContrastCheck) => `${entry.fg.qualifiedName}|${entry.bg.qualifiedName}`;
   const seen = new Set(report.checks.map(key));
-  const extra = declared.filter((entry) => !seen.has(key(entry)));
+  const extra = declared.filter((entry) => {
+    if (seen.has(key(entry))) {
+      return false;
+    }
+    seen.add(key(entry));
+    return true;
+  });
 
   return { source: report.source, checks: [...report.checks, ...extra] };
 }

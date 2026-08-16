@@ -227,3 +227,19 @@ describe("declared pairs keyed on identity", () => {
     expect(result?.checks.map((entry) => entry.fg.name)).toEqual(["ink", "rule"]);
   });
 });
+
+describe("repeated declared pairs", () => {
+  it("shows a pair once even when the author listed it twice", () => {
+    const result = report({
+      schemaVersion: SCHEMA_VERSION,
+      color: { ink: { value: "#000" }, paper: { value: "#fff" }, brand: { value: "#2563eb" } },
+      roles: { text: "color.ink", surface: "color.paper" },
+      contrastPairs: [
+        { fg: "color.ink", bg: "color.brand" },
+        { fg: "color.ink", bg: "color.brand" },
+      ],
+    });
+
+    expect(result?.checks).toHaveLength(2);
+  });
+});

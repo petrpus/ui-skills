@@ -226,7 +226,7 @@ describe("contrast section", () => {
   it("marks AA Large differently from a grade that passes everywhere", () => {
     const large = render({
       schemaVersion: SCHEMA_VERSION,
-      // ~3.5:1 — passes for large text only.
+      // ~3.03:1 — passes for large text only.
       color: { ink: { value: "#949494" }, paper: { value: "#ffffff" } },
       roles: { text: "color.ink", surface: "color.paper" },
     });
