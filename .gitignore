@@ -1,0 +1,12 @@
+node_modules/
+dist/
+tmp/
+
+# pracovní data ui-skills (snapshoty mohou obsahovat citlivá data ze session)
+.ui-skills/
+
+.env*
+!.env.example
+
+.DS_Store
+*.log
