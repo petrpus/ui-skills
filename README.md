@@ -11,7 +11,7 @@ statických HTML souborů, bez integrace do build pipeline.
 
 ## Stav
 
-Ve vývoji. Kompletní specifikace: [`spec/SPEC-ui-skills.md`](spec/SPEC-ui-skills.md).
+Ve vývoji. Kompletní specifikace: [`docs/spec/SPEC-ui-skills.md`](docs/spec/SPEC-ui-skills.md).
 
 ## Plánované skills a příkazy
 
