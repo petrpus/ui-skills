@@ -52,7 +52,7 @@ html:has(#theme-dark:checked) .theme__knob { transform: translateX(1rem); }
 
 /*
  * Scoped to their container rather than left as bare class rules. A later
- * `.mode { display: … }` written for spacing would otherwise tie on specificity
+ * bare ".mode" rule written for spacing would otherwise tie on specificity
  * and win on source order, which is precisely how both modes ended up visible
  * at once the first time.
  */
