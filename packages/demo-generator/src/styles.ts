@@ -4,6 +4,7 @@
  */
 export const DEMO_STYLES = `
 :root {
+  color-scheme: light;
   --ui-bg: #fbfbfc;
   --ui-panel: #ffffff;
   --ui-ink: #1c1c1f;
@@ -14,7 +15,51 @@ export const DEMO_STYLES = `
   --ui-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
 }
 
+/*
+ * The demo's own chrome follows the switch as well. Without this the page frame
+ * would stay bright around a system that has gone dark, which tells a reader
+ * nothing about how their own design behaves.
+ */
+html:has(#theme-dark:checked) {
+  color-scheme: dark;
+  --ui-bg: #121214;
+  --ui-panel: #1c1c1f;
+  --ui-ink: #f4f4f5;
+  --ui-ink-soft: #a1a1aa;
+  --ui-line: #2e2e33;
+}
+
 * { box-sizing: border-box; }
+
+.theme__input { position: absolute; opacity: 0; pointer-events: none; }
+.theme {
+  display: inline-flex; align-items: center; gap: 0.5rem;
+  margin-top: 1rem; cursor: pointer; user-select: none;
+  font-size: 0.8125rem; color: var(--ui-ink-soft);
+}
+.theme__track {
+  width: 2.25rem; height: 1.25rem; border-radius: 999px;
+  background: var(--ui-line); position: relative; transition: background 120ms;
+}
+.theme__knob {
+  position: absolute; top: 0.1875rem; left: 0.1875rem;
+  width: 0.875rem; height: 0.875rem; border-radius: 999px;
+  background: var(--ui-panel); box-shadow: 0 1px 2px rgba(0,0,0,.3);
+  transition: transform 120ms;
+}
+html:has(#theme-dark:checked) .theme__knob { transform: translateX(1rem); }
+.theme__input:focus-visible + .theme .theme__track { outline: 2px solid var(--ui-ink); outline-offset: 2px; }
+
+/*
+ * Scoped to their container rather than left as bare class rules. A later
+ * bare ".mode" rule written for spacing would otherwise tie on specificity
+ * and win on source order, which is precisely how both modes ended up visible
+ * at once the first time.
+ */
+.contrast__ratio .mode--dark { display: none; }
+html:has(#theme-dark:checked) .contrast__ratio .mode--light { display: none; }
+html:has(#theme-dark:checked) .contrast__ratio .mode--dark { display: block; }
+.contrast__grade { display: block; margin-top: 0.25rem; }
 
 body {
   margin: 0;
@@ -72,6 +117,10 @@ body {
   font-family: var(--ui-mono); font-size: 0.6875rem;
   color: var(--ui-ink-soft); margin-top: 0.25rem; opacity: 0.8;
 }
+.swatch__dark {
+  font-family: var(--ui-mono); font-size: 0.6875rem;
+  color: var(--ui-ink-soft); margin-top: 0.25rem;
+}
 .swatch__note { font-size: 0.75rem; color: var(--ui-ink-soft); margin-top: 0.5rem; }
 
 .section__note {
@@ -93,6 +142,7 @@ body {
   font-family: var(--ui-mono); font-size: 0.8125rem;
   text-align: right; white-space: nowrap;
 }
+.contrast__ratio .badge { font-family: var(--ui-font); }
 
 .badge {
   display: inline-block; font-size: 0.6875rem; font-weight: 600;
@@ -100,8 +150,11 @@ body {
   white-space: nowrap;
 }
 .badge--pass { background: #dcfce7; color: #14532d; }
+html:has(#theme-dark:checked) .badge--pass { background: #14532d; color: #dcfce7; }
 .badge--partial { background: #fef3c7; color: #713f12; }
+html:has(#theme-dark:checked) .badge--partial { background: #713f12; color: #fef3c7; }
 .badge--fail { background: #fee2e2; color: #7f1d1d; }
+html:has(#theme-dark:checked) .badge--fail { background: #7f1d1d; color: #fee2e2; }
 .badge--unknown { background: #f4f4f5; color: #52525b; }
 
 .types { display: grid; gap: 1rem; }

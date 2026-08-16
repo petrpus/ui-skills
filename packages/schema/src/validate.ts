@@ -1,5 +1,6 @@
 import {
   type ContrastPair,
+  type DarkOverride,
   ROLES,
   type RoleName,
   SCHEMA_VERSION,
@@ -13,13 +14,45 @@ import {
   type TypographyToken,
 } from "./types.ts";
 
-const TOKEN_KEYS = new Set(["value", "ref", "css", "description"]);
+const TOKEN_KEYS = new Set(["value", "ref", "css", "description", "dark"]);
 
 const CSS_CUSTOM_PROPERTY = /^--[a-zA-Z0-9_-]+$/;
 const QUALIFIED_NAME = /^[^.]+\.[^.]+$/;
 
 function isRecord(input: unknown): input is Record<string, unknown> {
   return typeof input === "object" && input !== null && !Array.isArray(input);
+}
+
+/**
+ * A dark override says what the token becomes, not what it is: exactly one of a
+ * value or a reference, and nothing else. It carries no name, no css mapping and
+ * no description, because those belong to the token in both modes.
+ */
+function validateDark(raw: unknown, path: string): DarkOverride {
+  if (!isRecord(raw)) {
+    throw new TokensError('"dark" musí být objekt s "value" nebo "ref"', path);
+  }
+
+  for (const key of Object.keys(raw)) {
+    if (key !== "value" && key !== "ref") {
+      throw new TokensError(`"dark" nesmí obsahovat "${key}" — jen value nebo ref`, path);
+    }
+  }
+
+  const { value, ref } = raw;
+  if (value !== undefined && ref !== undefined) {
+    throw new TokensError('"dark" má "value" i "ref" — smí mít právě jedno', path);
+  }
+  if (ref !== undefined) {
+    if (typeof ref !== "string" || !QUALIFIED_NAME.test(ref)) {
+      throw new TokensError('"dark.ref" musí být kvalifikované jméno tokenu', path);
+    }
+    return { ref };
+  }
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new TokensError('"dark" potřebuje neprázdné "value" nebo "ref"', path);
+  }
+  return { value };
 }
 
 function validateToken(raw: unknown, path: string): Token {
@@ -36,7 +69,7 @@ function validateToken(raw: unknown, path: string): Token {
     }
   }
 
-  const { value, ref, css, description } = raw;
+  const { value, ref, css, description, dark } = raw;
 
   if (value !== undefined && ref !== undefined) {
     throw new TokensError('token má "value" i "ref" — smí mít právě jedno', path);
@@ -53,6 +86,7 @@ function validateToken(raw: unknown, path: string): Token {
   const meta = {
     ...(css === undefined ? {} : { css }),
     ...(description === undefined ? {} : { description }),
+    ...(dark === undefined ? {} : { dark: validateDark(dark, path) }),
   };
 
   if (ref !== undefined) {

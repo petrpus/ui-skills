@@ -255,3 +255,109 @@ describe("roles and contrast pairs as reference entry points", () => {
     }
   });
 });
+
+describe("dark mode", () => {
+  it("gives a token its override in dark and its own value in light", () => {
+    const tokens = resolve({
+      schemaVersion: SCHEMA_VERSION,
+      color: { ink: { value: "#18181b", dark: { value: "#fafafa" } } },
+    });
+
+    expect(tokens.color?.[0]?.value).toBe("#18181b");
+    expect(tokens.color?.[0]?.dark).toBe("#fafafa");
+  });
+
+  it("leaves dark unset when the token looks the same in both modes", () => {
+    const tokens = resolve({
+      schemaVersion: SCHEMA_VERSION,
+      color: { brand: { value: "#2563eb" } },
+    });
+
+    expect(tokens.color?.[0]?.dark).toBeUndefined();
+  });
+
+  it("redirects a reference rather than restating a value", () => {
+    const tokens = resolve({
+      schemaVersion: SCHEMA_VERSION,
+      color: {
+        "gray-100": { value: "#f4f4f5" },
+        "gray-900": { value: "#18181b" },
+        "surface-2": { ref: "color.gray-100", dark: { ref: "color.gray-900" } },
+      },
+    });
+    const surface = tokens.color?.find((token) => token.name === "surface-2");
+
+    expect(surface?.value).toBe("#f4f4f5");
+    expect(surface?.dark).toBe("#18181b");
+  });
+
+  it("carries an override through a token that points at it", () => {
+    // The point of a palette swap: one token darkens and everything leaning on
+    // it follows, without each needing an override of its own.
+    const tokens = resolve({
+      schemaVersion: SCHEMA_VERSION,
+      color: {
+        ink: { value: "#18181b", dark: { value: "#fafafa" } },
+        heading: { ref: "color.ink" },
+      },
+    });
+    const heading = tokens.color?.find((token) => token.name === "heading");
+
+    expect(heading?.value).toBe("#18181b");
+    expect(heading?.dark).toBe("#fafafa");
+  });
+
+  it("follows a chain of overrides to the end", () => {
+    const tokens = resolve({
+      schemaVersion: SCHEMA_VERSION,
+      color: {
+        base: { value: "#000", dark: { value: "#fff" } },
+        mid: { ref: "color.base" },
+        top: { ref: "color.mid" },
+      },
+    });
+
+    expect(tokens.color?.find((token) => token.name === "top")?.dark).toBe("#fff");
+  });
+
+  it("detects a cycle that exists only in dark mode", () => {
+    const cyclic = {
+      schemaVersion: SCHEMA_VERSION,
+      color: {
+        a: { value: "#000", dark: { ref: "color.b" } },
+        b: { value: "#111", dark: { ref: "color.a" } },
+      },
+    };
+
+    expect(() => resolve(cyclic)).toThrow(/cyklický odkaz/);
+  });
+
+  it("reports a dark override pointing at a token that is not there", () => {
+    const dangling = {
+      schemaVersion: SCHEMA_VERSION,
+      color: { a: { value: "#000", dark: { ref: "color.nikde" } } },
+    };
+
+    expect(() => resolve(dangling)).toThrow(/odkaz na neexistující token "color\.nikde"/);
+  });
+
+  it("resolves a role to both of its faces", () => {
+    const tokens = resolve({
+      schemaVersion: SCHEMA_VERSION,
+      color: { ink: { value: "#18181b", dark: { value: "#fafafa" } } },
+      roles: { text: "color.ink" },
+    });
+
+    expect(tokens.roles?.text?.value).toBe("#18181b");
+    expect(tokens.roles?.text?.dark).toBe("#fafafa");
+  });
+
+  it("darkens a spacing token if someone really wants to", () => {
+    const tokens = resolve({
+      schemaVersion: SCHEMA_VERSION,
+      spacing: { gap: { value: "16px", dark: { value: "20px" } } },
+    });
+
+    expect(tokens.spacing?.[0]?.dark).toBe("20px");
+  });
+});

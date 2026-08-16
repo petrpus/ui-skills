@@ -1,5 +1,6 @@
 import type { ResolvedRoles, ResolvedTokens, RoleName } from "@ui-skills/schema";
 import { escapeHtml, isSafeCssValue, section } from "./html.ts";
+import { tokenCss } from "./theme.ts";
 
 /**
  * Roles the composite section cannot be drawn without: a surface to sit on,
@@ -44,8 +45,14 @@ function step(values: readonly string[], position: keyof typeof STEP_FRACTION): 
   return values[Math.min(last, Math.floor(values.length * STEP_FRACTION[position]))];
 }
 
+/**
+ * The token's paint rather than its literal value: a role that darkens has to
+ * darken here too, or the composite section stays lit while the page around it
+ * goes dark.
+ */
 function roleValue(roles: ResolvedRoles, name: RoleName): Value {
-  return roles[name]?.value;
+  const token = roles[name];
+  return token === undefined ? undefined : tokenCss(token);
 }
 
 export interface ShowcaseResult {
@@ -89,9 +96,9 @@ export function showcaseSection(tokens: ResolvedTokens): ShowcaseResult {
   // text colour would look like a correct system rather than an unmapped role.
   const danger = roleValue(roles, "danger");
 
-  const spacing = (tokens.spacing ?? []).map((token) => token.value);
-  const radii = (tokens.radius ?? []).map((token) => token.value);
-  const shadows = (tokens.shadow ?? []).map((token) => token.value);
+  const spacing = (tokens.spacing ?? []).map(tokenCss);
+  const radii = (tokens.radius ?? []).map(tokenCss);
+  const shadows = (tokens.shadow ?? []).map(tokenCss);
   const type = tokens.typography ?? [];
 
   const gapSmall = step(spacing, "small");

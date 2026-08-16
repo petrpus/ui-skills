@@ -4,6 +4,7 @@ import { escapeHtml, isSafeCssValue, section } from "./html.ts";
 import { radiusSection, shadowSection, spacingSection, typographySection } from "./scales.ts";
 import { showcaseSection } from "./showcase.ts";
 import { DEMO_STYLES } from "./styles.ts";
+import { THEME_TOGGLE, themeStyles, tokenCss } from "./theme.ts";
 
 /**
  * Shows where a semantic token gets its value: `primary → blue-600`. A primitive
@@ -22,9 +23,13 @@ function chainTrail(chain: readonly string[]): string {
 }
 
 function swatch(token: ResolvedToken): string {
-  const chip = isSafeCssValue(token.value)
-    ? `<span style="background: ${escapeHtml(token.value)}"></span>`
+  const paint = tokenCss(token);
+  const chip = isSafeCssValue(paint)
+    ? `<span style="background: ${escapeHtml(paint)}"></span>`
     : "<span></span>";
+  const darkNote = token.dark
+    ? `<div class="swatch__dark">tmavý režim: ${escapeHtml(token.dark)}</div>`
+    : "";
   const cssVar = token.css ? `<div class="swatch__css">${escapeHtml(token.css)}</div>` : "";
   const note = token.description
     ? `<p class="swatch__note">${escapeHtml(token.description)}</p>`
@@ -36,6 +41,7 @@ function swatch(token: ResolvedToken): string {
         <div class="swatch__name">${escapeHtml(token.name)}</div>
         <div class="swatch__value">${escapeHtml(token.value)}</div>
         ${chainTrail(token.chain)}
+        ${darkNote}
         ${cssVar}
         ${note}
       </div>
@@ -68,32 +74,60 @@ const SOURCE_LABEL: Record<ContrastReport["source"], string> = {
   fallback: "proti černé a bílé (role ani konvence nejsou k dispozici)",
 };
 
-function contrastRow(entry: ContrastCheck): string {
-  const safe = isSafeCssValue(entry.fg.value) && isSafeCssValue(entry.bg.value);
-  const preview = safe
-    ? `<td class="contrast__preview" style="background: ${escapeHtml(entry.bg.value)}; color: ${escapeHtml(entry.fg.value)}">Příliš žluťoučký kůň</td>`
-    : '<td class="contrast__preview contrast__preview--none">nelze vykreslit</td>';
-
-  const ratio =
-    entry.ratio === undefined
-      ? '<td class="contrast__ratio">—</td>'
-      : `<td class="contrast__ratio">${entry.ratio.toFixed(2)}:1</td>`;
-
+/**
+ * One measurement, wrapped in a single element that carries nothing but its
+ * mode.
+ *
+ * The wrapper exists so that showing and hiding is decided by one class on one
+ * element. An earlier version put the mode class on the inner parts alongside
+ * their layout classes, and a same-specificity layout rule written later in the
+ * stylesheet quietly won — leaving both modes' badges on screen at once.
+ */
+function measurement(entry: ContrastCheck, mode: "light" | "dark" | undefined): string {
+  const ratio = entry.ratio === undefined ? "—" : `${entry.ratio.toFixed(2)}:1`;
   const grade =
     entry.grade === undefined
-      ? '<td><span class="badge badge--unknown">nelze spočítat</span></td>'
-      : `<td><span class="badge badge--${BADGE_TONE[entry.grade]}">${escapeHtml(entry.grade)}</span></td>`;
+      ? '<span class="badge badge--unknown">nelze spočítat</span>'
+      : `<span class="badge badge--${BADGE_TONE[entry.grade]}">${escapeHtml(entry.grade)}</span>`;
+  const modeClass = mode === undefined ? "" : ` mode--${mode}`;
+
+  return `<span class="mode${modeClass}">${ratio}<span class="contrast__grade">${grade}</span></span>`;
+}
+
+function contrastRow(entry: ContrastCheck, darkEntry: ContrastCheck | undefined): string {
+  const background = tokenCss(entry.bg);
+  const foreground = tokenCss(entry.fg);
+  const safe = isSafeCssValue(background) && isSafeCssValue(foreground);
+  const preview = safe
+    ? `<td class="contrast__preview" style="background: ${escapeHtml(background)}; color: ${escapeHtml(foreground)}">Příliš žluťoučký kůň</td>`
+    : '<td class="contrast__preview contrast__preview--none">nelze vykreslit</td>';
+
+  // Both measurements are written out and the stylesheet shows the one that
+  // belongs to the current mode. The numbers cannot be recomputed in the page:
+  // there is no script, by design.
+  const numbers = darkEntry
+    ? `${measurement(entry, "light")}${measurement(darkEntry, "dark")}`
+    : measurement(entry, undefined);
 
   return `<tr>
         <td class="contrast__pair"><span>${escapeHtml(entry.fg.name)}</span> na <span>${escapeHtml(entry.bg.name)}</span></td>
         ${preview}
-        ${ratio}
-        ${grade}
+        <td class="contrast__ratio">${numbers}</td>
       </tr>`;
 }
 
-function contrastSection(report: ContrastReport): string {
-  const rows = report.checks.map(contrastRow).join("\n      ");
+function pairKey(entry: ContrastCheck): string {
+  return `${entry.fg.qualifiedName}|${entry.bg.qualifiedName}`;
+}
+
+function contrastSection(report: ContrastReport, darkReport: ContrastReport | undefined): string {
+  // Matched by which tokens the pair is, not by where it sits in the list. The
+  // two reports happen to come out in the same order today, and relying on that
+  // would put a light ratio next to the wrong dark one the day they diverge.
+  const darkByPair = new Map((darkReport?.checks ?? []).map((entry) => [pairKey(entry), entry]));
+  const rows = report.checks
+    .map((entry) => contrastRow(entry, darkByPair.get(pairKey(entry))))
+    .join("\n      ");
   const body = `<p class="section__note">Dvojice určeny ${escapeHtml(SOURCE_LABEL[report.source])}.</p>
   <table class="contrast">
     <tbody>
@@ -134,10 +168,12 @@ export function renderDemo(tokens: ResolvedTokens): string {
   const title = tokens.name ?? "Design systém";
   const count = countTokens(tokens);
   const contrast = reportContrast(tokens);
+  const theme = themeStyles(tokens);
+  const darkContrast = theme.hasDark ? reportContrast(tokens, "dark") : undefined;
   const showcase = showcaseSection(tokens);
   const sections = [
     tokens.color ? colorSection(tokens.color) : "",
-    contrast ? contrastSection(contrast) : "",
+    contrast ? contrastSection(contrast, darkContrast) : "",
     tokens.typography ? typographySection(tokens.typography) : "",
     tokens.spacing ? spacingSection(tokens.spacing) : "",
     tokens.radius ? radiusSection(tokens.radius) : "",
@@ -170,6 +206,7 @@ export function renderDemo(tokens: ResolvedTokens): string {
 <title>${escapeHtml(title)}</title>
 <style>
 ${DEMO_STYLES}
+${theme.css}
 </style>
 </head>
 <body>
@@ -178,6 +215,7 @@ ${DEMO_STYLES}
     <p class="masthead__eyebrow">Design systém</p>
     <h1 class="masthead__title">${escapeHtml(title)}</h1>
     <p class="masthead__meta">${tokenCountLabel(count)}</p>
+    ${theme.hasDark ? THEME_TOGGLE : ""}
   </header>
 
   ${body}

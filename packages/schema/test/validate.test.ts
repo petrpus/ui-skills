@@ -313,3 +313,68 @@ describe("typography", () => {
     ).toThrow(/jméno tokenu nesmí obsahovat tečku/);
   });
 });
+
+describe("dark overrides", () => {
+  it("accepts a value override", () => {
+    const tokens = validateTokens({
+      schemaVersion: SCHEMA_VERSION,
+      color: { ink: { value: "#000", dark: { value: "#fff" } } },
+    });
+
+    expect(tokens.color?.ink?.dark).toEqual({ value: "#fff" });
+  });
+
+  it("accepts a ref override", () => {
+    const tokens = validateTokens({
+      schemaVersion: SCHEMA_VERSION,
+      color: { a: { value: "#000" }, b: { value: "#111", dark: { ref: "color.a" } } },
+    });
+
+    expect(tokens.color?.b?.dark).toEqual({ ref: "color.a" });
+  });
+
+  it("rejects an override carrying both a value and a ref", () => {
+    expect(() =>
+      validateTokens({
+        schemaVersion: SCHEMA_VERSION,
+        color: { a: { value: "#000", dark: { value: "#fff", ref: "color.b" } } },
+      }),
+    ).toThrow(/"dark" má "value" i "ref"/);
+  });
+
+  it("rejects an override with neither", () => {
+    expect(() =>
+      validateTokens({ schemaVersion: SCHEMA_VERSION, color: { a: { value: "#000", dark: {} } } }),
+    ).toThrow(/"dark" potřebuje neprázdné "value" nebo "ref"/);
+  });
+
+  it.each(["css", "description", "dark"])(
+    "rejects %s inside a dark override, since it belongs to the token itself",
+    (key) => {
+      expect(() =>
+        validateTokens({
+          schemaVersion: SCHEMA_VERSION,
+          color: { a: { value: "#000", dark: { value: "#fff", [key]: "x" } } },
+        }),
+      ).toThrow(/"dark" nesmí obsahovat/);
+    },
+  );
+
+  it("rejects an override that is not an object", () => {
+    expect(() =>
+      validateTokens({
+        schemaVersion: SCHEMA_VERSION,
+        color: { a: { value: "#000", dark: "#fff" } },
+      }),
+    ).toThrow(/"dark" musí být objekt/);
+  });
+
+  it("rejects a dark ref that is not a qualified name", () => {
+    expect(() =>
+      validateTokens({
+        schemaVersion: SCHEMA_VERSION,
+        color: { a: { value: "#000", dark: { ref: "ink" } } },
+      }),
+    ).toThrow(/"dark\.ref" musí být kvalifikované jméno/);
+  });
+});

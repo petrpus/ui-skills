@@ -1,6 +1,7 @@
 import type { ResolvedGroup, ResolvedToken, ResolvedTypographyToken } from "@ui-skills/schema";
 import { escapeHtml, isSafeCssValue, section } from "./html.ts";
 import { SAMPLE_HEADING, SAMPLE_PARAGRAPH, SAMPLE_SHORT } from "./samples.ts";
+import { tokenCss } from "./theme.ts";
 
 /**
  * Drops the quotes around font names. CSS accepts an unquoted family list, and
@@ -193,7 +194,7 @@ export function typographySection(steps: readonly ResolvedTypographyToken[]): st
 }
 
 function spacingRow(token: ResolvedToken): string {
-  const style = safeStyle([["width", token.value]]);
+  const style = safeStyle([["width", tokenCss(token)]]);
 
   return `<article class="ruler">
       <div class="ruler__label">
@@ -217,7 +218,7 @@ export function spacingSection(group: ResolvedGroup): string {
 }
 
 function radiusTile(token: ResolvedToken): string {
-  const style = safeStyle([["border-radius", token.value]]);
+  const style = safeStyle([["border-radius", tokenCss(token)]]);
 
   return `<article class="tile">
       <div class="tile__shape tile__shape--radius"${style}></div>
@@ -239,7 +240,7 @@ export function radiusSection(group: ResolvedGroup): string {
 }
 
 function shadowTile(token: ResolvedToken): string {
-  const style = safeStyle([["box-shadow", token.value]]);
+  const style = safeStyle([["box-shadow", tokenCss(token)]]);
 
   return `<article class="tile">
       <div class="tile__shape tile__shape--shadow"${style}></div>

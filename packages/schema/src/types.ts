@@ -30,10 +30,17 @@ export interface ContrastPair {
   readonly bg: string;
 }
 
+/**
+ * What a token becomes in dark mode. Only the value changes — a token keeps its
+ * name, its meaning and its CSS custom property across both modes.
+ */
+export type DarkOverride = { readonly value: string } | { readonly ref: string };
+
 interface TokenMeta {
   /** CSS custom property this token maps to, e.g. `--color-primary`. */
   readonly css?: string;
   readonly description?: string;
+  readonly dark?: DarkOverride;
 }
 
 /** A primitive: the value is written out. */
@@ -99,6 +106,12 @@ export interface ResolvedToken {
   readonly name: string;
   readonly qualifiedName: string;
   readonly value: string;
+  /**
+   * The value in dark mode, present only when it differs from the light one.
+   * Absent means the token looks the same in both, which is the ordinary case
+   * for spacing, radii and most of a palette.
+   */
+  readonly dark?: string;
   /**
    * Every hop from this token to the literal, starting with the token itself.
    * A primitive has a chain of one; the demo shows the rest so a reader can see
