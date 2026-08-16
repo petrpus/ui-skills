@@ -1,0 +1,38 @@
+name: verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A superseded pull request run reports on code nobody has any more, so it is
+# cancelled. Pushes to main are not: two merges landing back to back would
+# leave the first commit with no completed answer, which is the one place the
+# history is expected to be green.
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    strategy:
+      # Both ends of what package.json claims to support. The lower one is the
+      # promise; without running it, `engines: node >=22` is a guess.
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm run verify
