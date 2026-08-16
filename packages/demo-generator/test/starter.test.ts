@@ -1,4 +1,14 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resolveTokens, SCHEMA_VERSION, validateTokens } from "@ui-skills/schema";
@@ -117,12 +127,35 @@ describe("first run in a project", () => {
     expect(readFileSync(tokensPath, "utf8")).toBe("");
   });
 
-  it("reports a directory in place of the file rather than trying to write over it", () => {
+  it("reports a directory sitting where tokens.json should be", () => {
     const tokensPath = join(dir, "tokens.json");
-    rmSync(tokensPath, { force: true });
-    mkdtempSync(join(dir, "x-"));
-    writeFileSync(join(dir, "occupied.json"), "");
+    mkdirSync(tokensPath);
 
-    expect(() => run([dir])).toThrow();
+    expect(() => run([tokensPath])).toThrow(/nelze přečíst/);
+    expect(statSync(tokensPath).isDirectory()).toBe(true);
+  });
+
+  it("refuses a symlink that points nowhere instead of failing obscurely", () => {
+    const tokensPath = join(dir, "tokens.json");
+    symlinkSync(join(dir, "nikde.json"), tokensPath);
+
+    expect(() => run([tokensPath])).toThrow(/symlink, který nikam nevede/);
+    expect(lstatSync(tokensPath).isSymbolicLink()).toBe(true);
+  });
+
+  it("follows a symlink to a real tokens file instead of replacing the link", () => {
+    const realPath = join(dir, "skutecne.json");
+    const linkPath = join(dir, "tokens.json");
+    writeFileSync(
+      realPath,
+      JSON.stringify({ schemaVersion: SCHEMA_VERSION, color: { a: { value: "#abcdef" } } }),
+    );
+    symlinkSync(realPath, linkPath);
+
+    const result = run([linkPath]);
+
+    expect(result.createdStarter).toBe(false);
+    expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
+    expect(readFileSync(result.demoPath, "utf8")).toContain("#abcdef");
   });
 });

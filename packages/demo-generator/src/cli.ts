@@ -80,13 +80,36 @@ function readOrCreateTokens(path: string): { raw: string; created: boolean } {
   }
 
   const starter = serializeStarter();
+
+  // Checked before it is written, not only in the test suite. A tool that
+  // leaves behind a file its own validator rejects is worse than one that
+  // writes nothing, and that promise should not rest on someone remembering
+  // to run the tests after editing the starter.
+  try {
+    validateTokens(JSON.parse(starter));
+  } catch (error) {
+    throw new Error(`základ tokens.json je vadný a nebyl zapsán: ${(error as Error).message}`);
+  }
+
   try {
     writeFileSync(path, starter, { flag: "wx" });
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-      return { raw: readFileSync(path, "utf8"), created: false };
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+      throw new Error(`tokens.json nelze založit: ${(error as Error).message}`);
     }
-    throw new Error(`tokens.json nelze založit: ${(error as Error).message}`);
+
+    // Something is at the path that the read could not see. Either another
+    // process won the race — read what it wrote — or the path is a symlink
+    // going nowhere, which an exclusive create refuses whether or not its
+    // target exists.
+    try {
+      return { raw: readFileSync(path, "utf8"), created: false };
+    } catch {
+      throw new Error(
+        `na cestě ${path} něco je, ale nejde to přečíst — nejspíš symlink, ` +
+          `který nikam nevede. Nic jsem nepřepsal.`,
+      );
+    }
   }
 
   return { raw: starter, created: true };
