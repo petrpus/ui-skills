@@ -77,24 +77,52 @@ const UNIT_SCALE: Record<string, number> = {
   "%": 0.16,
 };
 
+const LENGTH = /(-?[\d.]+)\s*(px|pt|rem|em|ch|%)?\b/gi;
+
 /**
- * Reads a font size well enough to compare two of them. Undefined for anything
- * it cannot measure — `clamp()`, `calc()`, a bare keyword — so the caller can
- * fall back rather than order the scale by a number it invented.
+ * Reads a font size well enough to compare two of them.
+ *
+ * Takes the largest length it can find rather than insisting the whole value be
+ * one: a fluid step is written `clamp(2rem, 4vw, 3.5rem)`, and its upper bound
+ * is what decides whether it is the biggest step on the scale. Viewport units
+ * inside it are simply skipped — an approximation, but it keeps a fluid heading
+ * from becoming unmeasurable and dragging the ordering down with it.
+ *
+ * Undefined only when there is no length at all, e.g. a bare keyword.
  */
 function sizeInPx(size: string): number | undefined {
-  const match = /^(-?[\d.]+)\s*(px|pt|rem|em|ch|%)?$/i.exec(size.trim());
-  if (match?.[1] === undefined) {
-    return undefined;
-  }
+  const found = [...size.matchAll(LENGTH)]
+    .map(([, amount, unit]) => {
+      const parsed = Number.parseFloat(amount ?? "");
+      if (Number.isNaN(parsed)) {
+        return undefined;
+      }
+      const key = unit?.toLowerCase();
+      return parsed * (key === undefined ? 1 : (UNIT_SCALE[key] ?? 1));
+    })
+    .filter((value): value is number => value !== undefined);
 
-  const amount = Number.parseFloat(match[1]);
-  if (Number.isNaN(amount)) {
-    return undefined;
-  }
+  return found.length > 0 ? Math.max(...found) : undefined;
+}
 
-  const unit = match[2]?.toLowerCase();
-  return amount * (unit === undefined ? 1 : (UNIT_SCALE[unit] ?? 1));
+/**
+ * The steps whose size can be measured, biggest first.
+ *
+ * Only these can be called largest or smallest with a straight face. A step
+ * written `inherit` is not evidence of being either, so it never wins a
+ * superlative — it can still be picked, but only once measurement has nothing
+ * to say.
+ */
+function measuredSteps(
+  steps: readonly ResolvedTypographyToken[],
+): readonly ResolvedTypographyToken[] {
+  return steps
+    .map((step) => ({ step, size: sizeInPx(step.size) }))
+    .filter((entry): entry is { step: ResolvedTypographyToken; size: number } => {
+      return entry.size !== undefined;
+    })
+    .sort((a, b) => b.size - a.size)
+    .map((entry) => entry.step);
 }
 
 /**
@@ -105,25 +133,25 @@ function sizeInPx(size: string): number | undefined {
  * smallest step as a heading for everyone who writes theirs ascending.
  *
  * The body is the step named for it (`body`, `base`, `text`), falling back to
- * the smallest. When the two would be the same step, the next distinct one is
- * used instead of dropping the pairing: a two-step scale is exactly the case
- * that most needs showing.
+ * the smallest measurable one. When the two would be the same step, the next
+ * distinct one is used instead of dropping the pairing: a two-step scale is
+ * exactly the case that most needs showing.
  */
 function pairing(steps: readonly ResolvedTypographyToken[]): string {
   if (steps.length < 2) {
     return "";
   }
 
-  const measured = steps.map((step) => ({ step, size: sizeInPx(step.size) }));
-  const ordered = measured.every((entry) => entry.size !== undefined)
-    ? [...measured].sort((a, b) => (b.size ?? 0) - (a.size ?? 0)).map((entry) => entry.step)
-    : steps;
-
+  const measured = measuredSteps(steps);
   const bodyNames = ["body", "base", "text"];
-  const heading = ordered[0];
-  const named = ordered.find((step) => bodyNames.includes(step.name.toLowerCase()));
+
+  // Largest measurable step, or the first written when nothing can be measured.
+  const heading = measured[0] ?? steps[0];
+  const named = steps.find((step) => bodyNames.includes(step.name.toLowerCase()));
   const body =
-    named !== undefined && named !== heading ? named : ordered.find((step) => step !== heading);
+    named !== undefined && named !== heading
+      ? named
+      : (measured.findLast((step) => step !== heading) ?? steps.find((step) => step !== heading));
 
   if (heading === undefined || body === undefined) {
     return "";

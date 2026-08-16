@@ -180,10 +180,41 @@ describe("pairing across scale orderings", () => {
     expect(html).toContain("Párování big + small");
   });
 
-  it("falls back to document order when a size cannot be measured", () => {
+  it("measures a fluid step by its upper bound", () => {
+    // A clamp() hero is a normal way to write the biggest step. Treating it as
+    // unmeasurable used to drag the whole ordering back to document order.
     const html = render({
       schemaVersion: SCHEMA_VERSION,
-      typography: { first: { size: "clamp(1rem, 2vw, 3rem)" }, second: { size: "1rem" } },
+      typography: {
+        caption: { size: "0.75rem" },
+        body: { size: "1rem" },
+        h2: { size: "2rem" },
+        h1: { size: "clamp(2rem, 4vw, 3.5rem)" },
+      },
+    });
+
+    expect(html).toContain("Párování h1 + body");
+  });
+
+  it("leaves a step it cannot measure where the author put it", () => {
+    // `inherit` carries no length at all. The measurable steps still sort among
+    // themselves rather than the whole ordering giving up.
+    const html = render({
+      schemaVersion: SCHEMA_VERSION,
+      typography: {
+        odd: { size: "inherit" },
+        small: { size: "0.875rem" },
+        big: { size: "3rem" },
+      },
+    });
+
+    expect(html).toContain("Párování big + small");
+  });
+
+  it("falls back to document order when nothing can be measured", () => {
+    const html = render({
+      schemaVersion: SCHEMA_VERSION,
+      typography: { first: { size: "inherit" }, second: { size: "initial" } },
     });
 
     expect(html).toContain("Párování first + second");
