@@ -46,8 +46,8 @@ function validateToken(raw: unknown, path: string): Token {
   }
 
   const meta = {
-    ...(css === undefined ? {} : { css: css as string }),
-    ...(description === undefined ? {} : { description: description as string }),
+    ...(css === undefined ? {} : { css }),
+    ...(description === undefined ? {} : { description }),
   };
 
   if (ref !== undefined) {
@@ -74,6 +74,15 @@ function validateGroup(raw: unknown, path: string): TokenGroup {
   // vanish from every later Object.entries instead of being rendered.
   const group: Record<string, Token> = Object.create(null);
   for (const [name, token] of Object.entries(raw)) {
+    if (name.includes(".")) {
+      // A dot separates group from token in a `ref`, so a dotted name would
+      // produce a qualified name nobody could ever point at. Rejected here,
+      // where the message can name the actual problem.
+      throw new TokensError(
+        `jméno tokenu nesmí obsahovat tečku — ta odděluje skupinu od jména v odkazech`,
+        `${path}.${name}`,
+      );
+    }
     group[name] = validateToken(token, `${path}.${name}`);
   }
   return group;

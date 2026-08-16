@@ -91,6 +91,58 @@ describe("validateTokens", () => {
     expect(Object.keys(tokens.color ?? {}).sort()).toEqual(["café-☂", "šedá-60"]);
   });
 
+  it("rejects a token carrying both a value and a ref", () => {
+    const both = {
+      schemaVersion: SCHEMA_VERSION,
+      color: { a: { value: "#fff", ref: "color.b" } },
+    };
+
+    expect(() => validateTokens(both)).toThrow(/má "value" i "ref" — smí mít právě jedno/);
+  });
+
+  it("rejects a token with neither a value nor a ref", () => {
+    const neither = { schemaVersion: SCHEMA_VERSION, color: { a: { css: "--a" } } };
+
+    expect(() => validateTokens(neither)).toThrow(/chybí neprázdná hodnota "value" nebo odkaz/);
+  });
+
+  it.each([
+    ["a number", 123],
+    ["an unqualified name", "blue-600"],
+    ["a name with two dots", "color.blue.600"],
+    ["an empty group", ".blue-600"],
+  ])("rejects a ref that is %s", (_label, ref) => {
+    const broken = { schemaVersion: SCHEMA_VERSION, color: { a: { ref } } };
+
+    expect(() => validateTokens(broken)).toThrow(/"ref" musí být kvalifikované jméno/);
+  });
+
+  it.each([
+    ["missing the dashes", "color-primary"],
+    ["a single dash", "-color-primary"],
+    ["not a string", 42],
+    ["containing a space", "--color primary"],
+  ])("rejects a css mapping that is %s", (_label, css) => {
+    const broken = { schemaVersion: SCHEMA_VERSION, color: { a: { value: "#fff", css } } };
+
+    expect(() => validateTokens(broken)).toThrow(/"css" musí být CSS custom property/);
+  });
+
+  it("accepts a well-formed css mapping", () => {
+    const tokens = validateTokens({
+      schemaVersion: SCHEMA_VERSION,
+      color: { a: { value: "#fff", css: "--color-surface_2" } },
+    });
+
+    expect(tokens.color?.a?.css).toBe("--color-surface_2");
+  });
+
+  it("rejects a token name with a dot, which no ref could ever address", () => {
+    const dotted = { schemaVersion: SCHEMA_VERSION, color: { "gray.100": { value: "#eee" } } };
+
+    expect(() => validateTokens(dotted)).toThrow(/jméno tokenu nesmí obsahovat tečku/);
+  });
+
   it("rejects a token that is not an object", () => {
     const broken = { schemaVersion: SCHEMA_VERSION, color: { primary: "#fff" } };
 

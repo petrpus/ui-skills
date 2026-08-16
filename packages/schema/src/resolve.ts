@@ -23,6 +23,25 @@ function indexTokens(tokens: Tokens): Map<string, Token> {
   return index;
 }
 
+interface Resolution {
+  readonly value: string;
+  readonly chain: readonly string[];
+}
+
+/**
+ * Records the answer for every token on the walked path, not just the one asked
+ * about: each is the head of its own valid chain. Without this, resolving a
+ * chain of n tokens walks it n times over.
+ */
+function memoize(chain: readonly string[], value: string, cache: Map<string, Resolution>): void {
+  for (let i = 0; i < chain.length; i += 1) {
+    const name = chain[i];
+    if (name !== undefined && !cache.has(name)) {
+      cache.set(name, { value, chain: chain.slice(i) });
+    }
+  }
+}
+
 /**
  * Walks a token's references to the literal at the end. A reference may point at
  * another reference — the chain is followed as far as it goes, since the depth
@@ -31,12 +50,20 @@ function indexTokens(tokens: Tokens): Map<string, Token> {
 function follow(
   qualifiedName: string,
   index: ReadonlyMap<string, Token>,
-): { value: string; chain: string[] } {
+  cache: Map<string, Resolution>,
+): Resolution {
   const chain: string[] = [];
   const seen = new Set<string>();
   let current = qualifiedName;
 
   for (;;) {
+    const known = cache.get(current);
+    if (known !== undefined) {
+      const full = [...chain, ...known.chain];
+      memoize(full, known.value, cache);
+      return { value: known.value, chain: full };
+    }
+
     if (seen.has(current)) {
       throw new TokensError(`cyklický odkaz: ${[...chain, current].join(" → ")}`, qualifiedName);
     }
@@ -49,6 +76,7 @@ function follow(
       throw new TokensError(`odkaz na neexistující token "${current}"`, from ?? qualifiedName);
     }
     if (token.ref === undefined) {
+      memoize(chain, token.value, cache);
       return { value: token.value, chain };
     }
     current = token.ref;
@@ -59,6 +87,7 @@ function resolveGroup(
   groupName: TokenGroupName,
   tokens: Tokens,
   index: ReadonlyMap<string, Token>,
+  cache: Map<string, Resolution>,
 ): ResolvedGroup {
   const group = tokens[groupName];
   if (group === undefined) {
@@ -67,13 +96,13 @@ function resolveGroup(
 
   return Object.entries(group).map(([name, token]) => {
     const qualifiedName = `${groupName}.${name}`;
-    const { value, chain } = follow(qualifiedName, index);
+    const { value, chain } = follow(qualifiedName, index, cache);
 
     const resolved: ResolvedToken = {
       name,
       qualifiedName,
       value,
-      chain,
+      chain: [...chain],
       ...(token.css === undefined ? {} : { css: token.css }),
       ...(token.description === undefined ? {} : { description: token.description }),
     };
@@ -92,6 +121,7 @@ function resolveGroup(
  */
 export function resolveTokens(tokens: Tokens): ResolvedTokens {
   const index = indexTokens(tokens);
+  const cache = new Map<string, Resolution>();
 
   const resolved: {
     schemaVersion: number;
@@ -106,7 +136,7 @@ export function resolveTokens(tokens: Tokens): ResolvedTokens {
 
   for (const groupName of TOKEN_GROUPS) {
     if (tokens[groupName] !== undefined) {
-      resolved[groupName] = resolveGroup(groupName, tokens, index);
+      resolved[groupName] = resolveGroup(groupName, tokens, index, cache);
     }
   }
 

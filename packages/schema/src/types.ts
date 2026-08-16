@@ -56,8 +56,14 @@ export interface ResolvedToken {
 }
 
 /**
- * An ordered list rather than a map: token names like `100` and `50` are valid,
- * and object keys that look like integers reorder themselves.
+ * A list rather than a map, so consumers iterate one agreed order instead of
+ * each calling Object.entries and hoping.
+ *
+ * Known limitation: this does not recover the author's order for names that
+ * look like integers. `{"100": …, "50": …}` is already reordered to 50, 100 by
+ * the time JSON.parse hands it over, and no later conversion can undo that.
+ * For a palette that ordering is usually the wanted one, so it is documented
+ * rather than fought; fixing it properly would mean parsing JSON ourselves.
  */
 export type ResolvedGroup = readonly ResolvedToken[];
 
