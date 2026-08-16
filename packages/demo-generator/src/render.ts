@@ -136,19 +136,22 @@ export function renderDemo(tokens: ResolvedTokens): string {
   const contrast = reportContrast(tokens);
   const showcase = showcaseSection(tokens);
   const sections = [
-    showcase.html,
     tokens.color ? colorSection(tokens.color) : "",
     contrast ? contrastSection(contrast) : "",
     tokens.typography ? typographySection(tokens.typography) : "",
     tokens.spacing ? spacingSection(tokens.spacing) : "",
     tokens.radius ? radiusSection(tokens.radius) : "",
     tokens.shadow ? shadowSection(tokens.shadow) : "",
+    // Last on purpose: the ladders above say what the system contains, and this
+    // says whether it holds together. Reading it the other way round asks
+    // someone to judge a composition before seeing its parts.
+    showcase.html,
   ].filter(Boolean);
 
   // Absent because roles are missing, not because something broke — said out
   // loud so nobody goes looking for a bug in the generator.
   const showcaseNote =
-    showcase.missing.length > 0 && (tokens.color?.length ?? 0) > 0
+    showcase.missing.length > 0 && sections.length > 0
       ? `<p class="empty">Ukázková sekce se nevykreslila — chybí role: ${escapeHtml(
           showcase.missing.join(", "),
         )}. Doplň je do tokens.json v sekci "roles".</p>`

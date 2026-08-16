@@ -118,8 +118,11 @@ describe("showcase section", () => {
     expect(result.missing).toEqual(["surface", "primary", "on-primary"]);
   });
 
-  it("degrades on optional roles instead of refusing to draw", () => {
-    const html = render({
+  it("never gives a card a border the colour of the card", () => {
+    // The failure this guards is a section that is present in the markup and
+    // invisible on screen. Asserting the absence of the word "undefined" could
+    // not catch it: a value is emitted either way, it is just the wrong one.
+    const minimal = render({
       ...ownNaming,
       roles: {
         text: "color.ink",
@@ -129,8 +132,37 @@ describe("showcase section", () => {
       },
     });
 
-    expect(html).toContain('data-demo-section="showcase"');
-    expect(html).not.toContain("border-color: undefined");
+    expect(minimal).toContain('data-demo-section="showcase"');
+    const card = /showcase__card" style="([^"]*)"/.exec(minimal)?.[1] ?? "";
+    const background = /background: ([^;]*)/.exec(card)?.[1];
+    const borderColor = /border-color: ([^;]*)/.exec(card)?.[1];
+
+    expect(background).toBe("#ffffff");
+    expect(borderColor).toBeDefined();
+    expect(borderColor).not.toBe(background);
+  });
+
+  it("never gives the stage the colour of the cards standing on it", () => {
+    const minimal = render({
+      ...ownNaming,
+      roles: {
+        text: "color.ink",
+        surface: "color.paper",
+        primary: "color.brand",
+        "on-primary": "color.on-brand",
+      },
+    });
+    const stage = /class="showcase"([^>]*)>/.exec(minimal)?.[1] ?? "";
+    const stageBackground = /background: ([^;"]*)/.exec(stage)?.[1];
+
+    expect(stageBackground).not.toBe("#ffffff");
+  });
+
+  it("keeps the stage distinct from the cards when a second surface exists", () => {
+    const html = render(ownNaming);
+    const stage = /class="showcase"([^>]*)>/.exec(html)?.[1] ?? "";
+
+    expect(stage).toContain("background: #f4f4f5");
   });
 
   it("draws without any scales, since colours are what it truly needs", () => {
@@ -138,8 +170,11 @@ describe("showcase section", () => {
     const html = render({ schemaVersion: SCHEMA_VERSION, color, roles });
 
     expect(html).toContain('data-demo-section="showcase"');
-    expect(html).not.toContain("padding: undefined");
-    expect(html).not.toContain("border-radius: undefined");
+    // No scales means no padding or radius at all, not a padding of nothing.
+    const card = /showcase__card" style="([^"]*)"/.exec(html)?.[1] ?? "";
+    expect(card).toContain("background: #ffffff");
+    expect(card).not.toContain("padding");
+    expect(card).not.toContain("border-radius");
   });
 
   it("keeps a hostile token value out of every style it writes", () => {
@@ -175,5 +210,70 @@ describe("the demo stays a picture, not an application", () => {
 
     expect(html).not.toMatch(/<script/i);
     expect(html).not.toMatch(/<form/i);
+  });
+});
+
+describe("scale steps and section order", () => {
+  it.each([
+    [
+      ["8px", "16px", "32px"],
+      ["8px", "16px", "32px"],
+    ],
+    [
+      ["4px", "8px", "16px", "32px"],
+      ["8px", "16px", "32px"],
+    ],
+    [
+      ["2px", "4px", "8px", "12px", "16px", "24px", "48px"],
+      ["4px", "12px", "48px"],
+    ],
+  ])("takes three distinct steps from a scale of %s", (values, expected) => {
+    const spacing = Object.fromEntries(values.map((value, i) => [`s${i}`, { value }]));
+    const html = render({ ...ownNaming, spacing });
+
+    // small on the heading, middle on the card, large on the stage.
+    const [small, middle, large] = expected as [string, string, string];
+    expect(html).toMatch(new RegExp(`showcase__heading" style="[^"]*margin-bottom: ${small}`));
+    expect(html).toMatch(new RegExp(`showcase__card" style="[^"]*padding: ${middle}`));
+    expect(html).toMatch(new RegExp(`class="showcase" style="[^"]*padding: ${large}`));
+  });
+
+  it("does not collapse small and middle on a three-step scale", () => {
+    const html = render({
+      ...ownNaming,
+      spacing: { sm: { value: "8px" }, md: { value: "16px" }, lg: { value: "32px" } },
+    });
+    const heading = /showcase__heading" style="([^"]*)"/.exec(html)?.[1] ?? "";
+    const card = /showcase__card" style="([^"]*)"/.exec(html)?.[1] ?? "";
+
+    expect(/margin-bottom: ([^;]*)/.exec(heading)?.[1]).not.toBe(
+      /padding: ([^;]*)/.exec(card)?.[1],
+    );
+  });
+
+  it("copes with a one-step scale without inventing a second", () => {
+    const html = render({ ...ownNaming, spacing: { only: { value: "10px" } } });
+
+    expect(html).toMatch(/showcase__card" style="[^"]*padding: 10px/);
+  });
+
+  it("puts the showcase after the ladders, not before them", () => {
+    const html = render(ownNaming);
+
+    expect(html.indexOf('data-demo-section="showcase"')).toBeGreaterThan(
+      html.indexOf('data-demo-section="shadow"'),
+    );
+    expect(html.indexOf('data-demo-section="color"')).toBeLessThan(
+      html.indexOf('data-demo-section="showcase"'),
+    );
+  });
+
+  it("explains the missing section even for a document with no colours", () => {
+    const html = render({
+      schemaVersion: SCHEMA_VERSION,
+      spacing: { md: { value: "16px" } },
+    });
+
+    expect(html).toContain("Ukázková sekce se nevykreslila");
   });
 });

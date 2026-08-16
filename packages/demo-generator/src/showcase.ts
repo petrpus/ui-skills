@@ -21,22 +21,24 @@ function style(declarations: readonly string[]): string {
   return kept.length > 0 ? ` style="${kept.join("; ")}"` : "";
 }
 
+const STEP_FRACTION = { small: 0.25, middle: 0.5, large: 1 } as const;
+
 /**
  * Picks a step from a scale by position rather than by name, because a scale's
  * names are the project's own — `space-4` and `md` and `2` all mean the middle
  * of something. Position is the one thing every scale has.
+ *
+ * Proportional, not by fixed index: a fixed index made `small` and `middle`
+ * land on the same step of a three-step scale, so the smallest value was never
+ * used and two visibly different measurements came out identical.
  */
-function step(values: readonly string[], position: "small" | "middle" | "large"): Value {
+function step(values: readonly string[], position: keyof typeof STEP_FRACTION): Value {
   if (values.length === 0) {
     return undefined;
   }
-  if (position === "small") {
-    return values[Math.min(1, values.length - 1)];
-  }
-  if (position === "large") {
-    return values.at(-1);
-  }
-  return values[Math.floor(values.length / 2)];
+
+  const last = values.length - 1;
+  return values[Math.min(last, Math.floor(values.length * STEP_FRACTION[position]))];
 }
 
 function roleValue(roles: ResolvedRoles, name: RoleName): Value {
@@ -67,12 +69,21 @@ export function showcaseSection(tokens: ResolvedTokens): ShowcaseResult {
   }
 
   const surface = roleValue(roles, "surface");
-  const surface2 = roleValue(roles, "surface-2") ?? surface;
   const text = roleValue(roles, "text");
   const muted = roleValue(roles, "text-muted") ?? text;
   const primary = roleValue(roles, "primary");
   const onPrimary = roleValue(roles, "on-primary");
-  const border = roleValue(roles, "border") ?? surface2;
+
+  // A fallback must never land on the colour of the thing it sits against.
+  // Falling back to `surface` gave a system with only the required roles a
+  // stage, cards and borders all the same colour: present in the markup,
+  // invisible on screen. The stage simply goes without a background, letting
+  // the page behind it show; the border borrows the text colour, which is the
+  // one colour the system guarantees stands out against the surface.
+  const surface2 = roleValue(roles, "surface-2");
+  const border = roleValue(roles, "border") ?? text;
+  // `danger` deliberately has no fallback: an error line borrowing the ordinary
+  // text colour would look like a correct system rather than an unmapped role.
   const danger = roleValue(roles, "danger");
 
   const spacing = (tokens.spacing ?? []).map((token) => token.value);
