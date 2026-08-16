@@ -2,6 +2,7 @@
   "name": "ui-skills",
   "version": "0.0.0",
   "private": true,
+  "packageManager": "pnpm@11.9.0",
   "type": "module",
   "description": "Claude Code skills for visual UI review, design tokens and design-system demos",
   "license": "MIT",
