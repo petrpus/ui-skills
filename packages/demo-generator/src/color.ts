@@ -2,6 +2,8 @@ export interface Rgb {
   readonly r: number;
   readonly g: number;
   readonly b: number;
+  /** 0–1. Kept rather than discarded: dropping it reports translucent as opaque. */
+  readonly a: number;
 }
 
 /**
@@ -10,9 +12,18 @@ export interface Rgb {
  * far ends of a scale.
  */
 const KEYWORDS: Record<string, Rgb> = {
-  white: { r: 255, g: 255, b: 255 },
-  black: { r: 0, g: 0, b: 0 },
+  white: { r: 255, g: 255, b: 255, a: 1 },
+  black: { r: 0, g: 0, b: 0, a: 1 },
+  transparent: { r: 0, g: 0, b: 0, a: 0 },
 };
+
+function clampChannel(value: number): number {
+  return Math.min(255, Math.max(0, Math.round(value)));
+}
+
+function clampAlpha(value: number): number {
+  return Math.min(1, Math.max(0, value));
+}
 
 const HEX = /^#([0-9a-f]{3,8})$/i;
 const RGB_FUNCTION = /^rgba?\(([^)]*)\)$/i;
@@ -33,7 +44,8 @@ function parseHex(hex: string): Rgb | undefined {
   const r = Number.parseInt(digits.slice(0, 2), 16);
   const g = Number.parseInt(digits.slice(2, 4), 16);
   const b = Number.parseInt(digits.slice(4, 6), 16);
-  return { r, g, b };
+  const a = digits.length === 8 ? Number.parseInt(digits.slice(6, 8), 16) / 255 : 1;
+  return { r, g, b, a };
 }
 
 function parseChannel(part: string): number | undefined {
@@ -43,10 +55,21 @@ function parseChannel(part: string): number | undefined {
   }
   if (trimmed.endsWith("%")) {
     const percent = Number.parseFloat(trimmed.slice(0, -1));
-    return Number.isNaN(percent) ? undefined : Math.round((percent / 100) * 255);
+    return Number.isNaN(percent) ? undefined : clampChannel((percent / 100) * 255);
   }
   const value = Number.parseFloat(trimmed);
-  return Number.isNaN(value) ? undefined : Math.round(value);
+  return Number.isNaN(value) ? undefined : clampChannel(value);
+}
+
+function parseAlpha(part: string | undefined): number {
+  if (part === undefined) {
+    return 1;
+  }
+  const trimmed = part.trim();
+  const value = trimmed.endsWith("%")
+    ? Number.parseFloat(trimmed.slice(0, -1)) / 100
+    : Number.parseFloat(trimmed);
+  return Number.isNaN(value) ? 1 : clampAlpha(value);
 }
 
 /**
@@ -70,17 +93,16 @@ export function parseColor(input: string): Rgb | undefined {
 
   const rgb = RGB_FUNCTION.exec(value);
   if (rgb?.[1] !== undefined) {
-    const channels = rgb[1]
+    const parts = rgb[1]
       .split(rgb[1].includes(",") ? "," : /[\s/]+/)
-      .filter((part) => part.trim() !== "")
-      .slice(0, 3)
-      .map(parseChannel);
+      .filter((part) => part.trim() !== "");
+    const channels = parts.slice(0, 3).map(parseChannel);
 
     if (channels.length !== 3 || channels.some((channel) => channel === undefined)) {
       return undefined;
     }
     const [r, g, b] = channels as [number, number, number];
-    return { r, g, b };
+    return { r, g, b, a: parseAlpha(parts[3]) };
   }
 
   return undefined;
@@ -96,7 +118,25 @@ export function relativeLuminance({ r, g, b }: Rgb): number {
   return 0.2126 * channelLuminance(r) + 0.7152 * channelLuminance(g) + 0.0722 * channelLuminance(b);
 }
 
-/** WCAG 2.1 contrast ratio, between 1 and 21. */
+/**
+ * Flattens a translucent colour onto an opaque one, the way a browser paints it.
+ *
+ * Without this a token like `rgba(0,0,0,0.5)` would be read as solid black and
+ * reported as 21:1 against white, when what a reader actually sees is mid grey
+ * at about 4:1. The backdrop has to be opaque for this to mean anything, which
+ * is why a translucent background is reported as unknown instead.
+ */
+export function composite(foreground: Rgb, background: Rgb): Rgb {
+  const alpha = foreground.a;
+  return {
+    r: clampChannel(foreground.r * alpha + background.r * (1 - alpha)),
+    g: clampChannel(foreground.g * alpha + background.g * (1 - alpha)),
+    b: clampChannel(foreground.b * alpha + background.b * (1 - alpha)),
+    a: 1,
+  };
+}
+
+/** WCAG 2.1 contrast ratio, between 1 and 21. Both colours must be opaque. */
 export function contrastRatio(foreground: Rgb, background: Rgb): number {
   const a = relativeLuminance(foreground);
   const b = relativeLuminance(background);

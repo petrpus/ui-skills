@@ -100,6 +100,7 @@ body {
   white-space: nowrap;
 }
 .badge--pass { background: #dcfce7; color: #14532d; }
+.badge--partial { background: #fef3c7; color: #713f12; }
 .badge--fail { background: #fee2e2; color: #7f1d1d; }
 .badge--unknown { background: #f4f4f5; color: #52525b; }
 

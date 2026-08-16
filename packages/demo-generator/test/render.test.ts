@@ -203,3 +203,51 @@ describe("renderDemo with references", () => {
     expect(html).not.toContain("<img src=x>");
   });
 });
+
+describe("contrast section", () => {
+  const readable = {
+    schemaVersion: SCHEMA_VERSION,
+    color: { ink: { value: "#18181b" }, paper: { value: "#ffffff" } },
+    roles: { text: "color.ink", surface: "color.paper" },
+  };
+
+  it("renders the pairs with their ratio and grade", () => {
+    const html = render(readable);
+
+    expect(html).toContain('data-demo-section="contrast"');
+    expect(html).toContain("AAA");
+    expect(html).toMatch(/1[0-9]\.\d\d:1/);
+  });
+
+  it("says which level decided the pairs", () => {
+    expect(render(readable)).toContain("Dvojice určeny podle rolí");
+  });
+
+  it("marks AA Large differently from a grade that passes everywhere", () => {
+    const large = render({
+      schemaVersion: SCHEMA_VERSION,
+      // ~3.5:1 — passes for large text only.
+      color: { ink: { value: "#949494" }, paper: { value: "#ffffff" } },
+      roles: { text: "color.ink", surface: "color.paper" },
+    });
+
+    expect(large).toContain("badge--partial");
+    expect(large).toContain("AA Large");
+  });
+
+  it("keeps a hostile value out of the preview cell as well as the swatch", () => {
+    // The preview cell is a second place a token value reaches a style
+    // attribute, and it needs the same guard the swatch chip has.
+    const hostile = render({
+      schemaVersion: SCHEMA_VERSION,
+      color: {
+        sneaky: { value: 'image-set("https://evil.example.com/track.png" 1x)' },
+        paper: { value: "#ffffff" },
+      },
+      roles: { text: "color.sneaky", surface: "color.paper" },
+    });
+
+    expect(hostile).not.toMatch(/style="[^"]*evil\.example\.com/i);
+    expect(hostile).toContain("nelze vykreslit");
+  });
+});

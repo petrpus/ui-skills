@@ -49,6 +49,17 @@ function colorSection(group: ResolvedGroup): string {
   return section("color", "Barvy", `<div class="swatches">\n    ${swatches}\n  </div>`);
 }
 
+/**
+ * AA Large is the narrowest pass — it only holds for large text — so it does not
+ * get the same green as a grade that passes everywhere.
+ */
+const BADGE_TONE = {
+  AAA: "pass",
+  AA: "pass",
+  "AA Large": "partial",
+  fail: "fail",
+} as const;
+
 const SOURCE_LABEL: Record<ContrastReport["source"], string> = {
   roles: "podle rolí",
   convention: "podle konvence jmen (role nejsou zadané)",
@@ -69,7 +80,7 @@ function contrastRow(entry: ContrastCheck): string {
   const grade =
     entry.grade === undefined
       ? '<td><span class="badge badge--unknown">nelze spočítat</span></td>'
-      : `<td><span class="badge badge--${entry.grade === "fail" ? "fail" : "pass"}">${escapeHtml(entry.grade)}</span></td>`;
+      : `<td><span class="badge badge--${BADGE_TONE[entry.grade]}">${escapeHtml(entry.grade)}</span></td>`;
 
   return `<tr>
         <td class="contrast__pair"><span>${escapeHtml(entry.fg.name)}</span> na <span>${escapeHtml(entry.bg.name)}</span></td>

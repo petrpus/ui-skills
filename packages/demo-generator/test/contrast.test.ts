@@ -173,3 +173,57 @@ describe("contrast values", () => {
     expect(result?.checks[0]?.ratio).toBeCloseTo(21, 2);
   });
 });
+
+describe("translucent colours", () => {
+  it("reports what a reader actually sees, not the colour before painting", () => {
+    // Half-transparent black on white looks mid grey at about 4:1 — reporting
+    // the 21:1 of solid black would tell a designer an unreadable pair is safe.
+    const result = report({
+      schemaVersion: SCHEMA_VERSION,
+      color: { scrim: { value: "rgba(0, 0, 0, 0.5)" }, paper: { value: "#ffffff" } },
+      roles: { text: "color.scrim", surface: "color.paper" },
+    });
+
+    expect(result?.checks[0]?.ratio).toBeCloseTo(4.0, 0);
+    expect(result?.checks[0]?.grade).not.toBe("AAA");
+  });
+
+  it("handles a hex value carrying alpha the same way", () => {
+    const result = report({
+      schemaVersion: SCHEMA_VERSION,
+      color: { faded: { value: "#00000080" }, paper: { value: "#ffffff" } },
+      roles: { text: "color.faded", surface: "color.paper" },
+    });
+
+    expect(result?.checks[0]?.ratio).toBeLessThan(21);
+  });
+
+  it("says unknown when the backdrop itself is translucent", () => {
+    const result = report({
+      schemaVersion: SCHEMA_VERSION,
+      color: { ink: { value: "#000" }, veil: { value: "rgba(255, 255, 255, 0.4)" } },
+      roles: { text: "color.ink", surface: "color.veil" },
+    });
+
+    expect(result?.checks[0]?.ratio).toBeUndefined();
+    expect(result?.checks[0]?.grade).toBeUndefined();
+  });
+});
+
+describe("declared pairs keyed on identity", () => {
+  it("keeps a declared pair whose colour happens to match another token", () => {
+    const result = report({
+      schemaVersion: SCHEMA_VERSION,
+      color: {
+        ink: { value: "#111111" },
+        rule: { value: "#111111" },
+        paper: { value: "#ffffff" },
+      },
+      roles: { text: "color.ink", surface: "color.paper" },
+      contrastPairs: [{ fg: "color.rule", bg: "color.paper" }],
+    });
+
+    expect(result?.checks).toHaveLength(2);
+    expect(result?.checks.map((entry) => entry.fg.name)).toEqual(["ink", "rule"]);
+  });
+});

@@ -1,5 +1,11 @@
 import type { ResolvedToken, ResolvedTokens } from "@ui-skills/schema";
-import { type ContrastGrade, contrastRatio, gradeContrast, parseColor } from "./color.ts";
+import {
+  type ContrastGrade,
+  composite,
+  contrastRatio,
+  gradeContrast,
+  parseColor,
+} from "./color.ts";
 
 /** How the pairs to check were arrived at. Shown in the demo, so a reader knows. */
 export type ContrastSource = "roles" | "convention" | "fallback";
@@ -43,12 +49,20 @@ function startsWithAny(name: string, prefixes: readonly string[]): boolean {
 function check(fg: ResolvedToken, bg: ResolvedToken): ContrastCheck {
   const foreground = parseColor(fg.value);
   const background = parseColor(bg.value);
+  const unknown = { fg, bg, ratio: undefined, grade: undefined };
 
   if (foreground === undefined || background === undefined) {
-    return { fg, bg, ratio: undefined, grade: undefined };
+    return unknown;
   }
 
-  const ratio = contrastRatio(foreground, background);
+  // A translucent backdrop leaves the real colour dependent on whatever is
+  // behind it, which the tool cannot know. Saying so beats inventing a number.
+  if (background.a < 1) {
+    return unknown;
+  }
+
+  const painted = foreground.a < 1 ? composite(foreground, background) : foreground;
+  const ratio = contrastRatio(painted, background);
   return { fg, bg, ratio, grade: gradeContrast(ratio) };
 }
 
@@ -130,8 +144,12 @@ export function reportContrast(tokens: ResolvedTokens): ContrastReport | undefin
     return report;
   }
 
-  const seen = new Set(report.checks.map((entry) => `${entry.fg.value}|${entry.bg.value}`));
-  const extra = declared.filter((entry) => !seen.has(`${entry.fg.value}|${entry.bg.value}`));
+  // Keyed on token identity, not on the colour it currently holds. Two tokens
+  // sharing a hex today mean different things, and a declared pair must not
+  // disappear because of an incidental match.
+  const key = (entry: ContrastCheck) => `${entry.fg.qualifiedName}|${entry.bg.qualifiedName}`;
+  const seen = new Set(report.checks.map(key));
+  const extra = declared.filter((entry) => !seen.has(key(entry)));
 
   return { source: report.source, checks: [...report.checks, ...extra] };
 }

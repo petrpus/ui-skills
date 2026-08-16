@@ -202,3 +202,56 @@ describe("resolveTokens", () => {
     expect(tokens.spacing).toBeUndefined();
   });
 });
+
+describe("roles and contrast pairs as reference entry points", () => {
+  it("resolves a role through a chain of references", () => {
+    const tokens = resolve({
+      schemaVersion: SCHEMA_VERSION,
+      color: { base: { value: "#000" }, mid: { ref: "color.base" }, ink: { ref: "color.mid" } },
+      roles: { text: "color.ink" },
+    });
+
+    expect(tokens.roles?.text?.value).toBe("#000");
+    expect(tokens.roles?.text?.chain).toEqual(["color.ink", "color.mid", "color.base"]);
+  });
+
+  it("blames the role, not the token, when a role points nowhere", () => {
+    try {
+      resolve({
+        schemaVersion: SCHEMA_VERSION,
+        color: { ink: { value: "#000" } },
+        roles: { text: "color.nikde" },
+      });
+      expect.unreachable("dangling role should throw");
+    } catch (error) {
+      expect((error as TokensError).path).toBe("roles.text");
+      expect((error as Error).message).toContain("color.nikde");
+    }
+  });
+
+  it("still detects a cycle reached through a role", () => {
+    const cyclic = {
+      schemaVersion: SCHEMA_VERSION,
+      color: { a: { ref: "color.b" }, b: { ref: "color.a" } },
+      roles: { text: "color.a" },
+    };
+
+    expect(() => resolve(cyclic)).toThrow(/cyklický odkaz/);
+  });
+
+  it("blames the position of a contrast pair that points nowhere", () => {
+    try {
+      resolve({
+        schemaVersion: SCHEMA_VERSION,
+        color: { ink: { value: "#000" } },
+        contrastPairs: [
+          { fg: "color.ink", bg: "color.ink" },
+          { fg: "color.ink", bg: "color.nikde" },
+        ],
+      });
+      expect.unreachable("dangling contrast pair should throw");
+    } catch (error) {
+      expect((error as TokensError).path).toBe("contrastPairs[1].bg");
+    }
+  });
+});
