@@ -144,3 +144,85 @@ describe("spacing, radius and shadow ladders", () => {
     expect(html).toMatch(/ruler__bar" style="width: 8px"/);
   });
 });
+
+describe("pairing across scale orderings", () => {
+  it("finds the heading in a scale written smallest first", () => {
+    // The common ascending convention. Picking by position would set the
+    // 0.75rem caption as the heading over 1rem body text.
+    const html = render({
+      schemaVersion: SCHEMA_VERSION,
+      typography: {
+        caption: { size: "0.75rem" },
+        body: { size: "1rem" },
+        h2: { size: "2rem" },
+        h1: { size: "3rem" },
+      },
+    });
+
+    expect(html).toContain("Párování h1 + body");
+  });
+
+  it("still pairs when the body step is written first", () => {
+    const html = render({
+      schemaVersion: SCHEMA_VERSION,
+      typography: { body: { size: "1rem" }, display: { size: "3rem" } },
+    });
+
+    expect(html).toContain("Párování display + body");
+  });
+
+  it("compares sizes across units rather than by number alone", () => {
+    const html = render({
+      schemaVersion: SCHEMA_VERSION,
+      typography: { small: { size: "14px" }, big: { size: "2rem" } },
+    });
+
+    expect(html).toContain("Párování big + small");
+  });
+
+  it("falls back to document order when a size cannot be measured", () => {
+    const html = render({
+      schemaVersion: SCHEMA_VERSION,
+      typography: { first: { size: "clamp(1rem, 2vw, 3rem)" }, second: { size: "1rem" } },
+    });
+
+    expect(html).toContain("Párování first + second");
+  });
+
+  it("pairs the two distinct steps even when both could be called body", () => {
+    const html = render({
+      schemaVersion: SCHEMA_VERSION,
+      typography: { body: { size: "1rem" }, text: { size: "0.875rem" } },
+    });
+
+    expect(html).toContain("Párování body + text");
+  });
+
+  it("applies the body step's weight to the paired sample", () => {
+    const html = render({
+      schemaVersion: SCHEMA_VERSION,
+      typography: { display: { size: "3rem" }, body: { size: "1rem", weight: "300" } },
+    });
+
+    expect(html).toMatch(/pairing__body" style="[^"]*font-weight: 300/);
+  });
+
+  it("keeps a quoted font stack instead of dropping it for having quotes", () => {
+    const html = render({
+      schemaVersion: SCHEMA_VERSION,
+      typography: { body: { size: "1rem", family: '"Helvetica Neue", Arial, sans-serif' } },
+    });
+
+    expect(html).toContain("font-family: Helvetica Neue, Arial, sans-serif");
+  });
+
+  it("still refuses a family that is dangerous once unquoted", () => {
+    const html = render({
+      schemaVersion: SCHEMA_VERSION,
+      typography: { evil: { size: "1rem", family: '"url(https://evil.example.com/f.woff)"' } },
+    });
+
+    expect(html).not.toMatch(/style="[^"]*evil\.example\.com/i);
+    expect(html).toMatch(/style="font-size: 1rem"/);
+  });
+});

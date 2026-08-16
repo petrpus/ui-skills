@@ -3,9 +3,24 @@ import { escapeHtml, isSafeCssValue, section } from "./html.ts";
 import { SAMPLE_HEADING, SAMPLE_PARAGRAPH, SAMPLE_SHORT } from "./samples.ts";
 
 /**
+ * Drops the quotes around font names. CSS accepts an unquoted family list, and
+ * the value guard refuses quotes outright — without this, the idiomatic way to
+ * write a stack (`"Helvetica Neue", Arial`) would silently lose the preview it
+ * was meant to show. Anything actually dangerous still fails the guard after
+ * unquoting.
+ */
+function unquoteFamily(value: string): string {
+  return value.replace(/["']/g, "");
+}
+
+/**
  * Builds a `style` attribute from declaration pairs, dropping any whose value
  * would not be safe to inline. Same guard the swatches use — every value that
  * reaches the page as CSS goes through it.
+ *
+ * Property names are always literals written here, never taken from a token, so
+ * a document can influence what a declaration says but never which property it
+ * sets.
  */
 function safeStyle(declarations: readonly (readonly [string, string | undefined])[]): string {
   const safe = declarations
@@ -35,7 +50,7 @@ function typographyStep(step: ResolvedTypographyToken): string {
     ["line-height", step.lineHeight],
     ["font-weight", step.weight],
     ["letter-spacing", step.letterSpacing],
-    ["font-family", step.family],
+    ["font-family", step.family === undefined ? undefined : unquoteFamily(step.family)],
   ]);
 
   const note = step.description ? `<p class="scale__note">${escapeHtml(step.description)}</p>` : "";
@@ -52,23 +67,65 @@ function typographyStep(step: ResolvedTypographyToken): string {
     </article>`;
 }
 
+/** Rough px equivalents, enough to order a scale — not to lay anything out. */
+const UNIT_SCALE: Record<string, number> = {
+  px: 1,
+  pt: 4 / 3,
+  rem: 16,
+  em: 16,
+  ch: 8,
+  "%": 0.16,
+};
+
+/**
+ * Reads a font size well enough to compare two of them. Undefined for anything
+ * it cannot measure — `clamp()`, `calc()`, a bare keyword — so the caller can
+ * fall back rather than order the scale by a number it invented.
+ */
+function sizeInPx(size: string): number | undefined {
+  const match = /^(-?[\d.]+)\s*(px|pt|rem|em|ch|%)?$/i.exec(size.trim());
+  if (match?.[1] === undefined) {
+    return undefined;
+  }
+
+  const amount = Number.parseFloat(match[1]);
+  if (Number.isNaN(amount)) {
+    return undefined;
+  }
+
+  const unit = match[2]?.toLowerCase();
+  return amount * (unit === undefined ? 1 : (UNIT_SCALE[unit] ?? 1));
+}
+
 /**
  * The pairing a reader actually judges: a heading with body text under it.
- * The heading is the largest step, the body the one named for it — `body`,
- * `base` or `text` — falling back to the smallest. A guess, but a stated one,
- * and the alternative is asking the author to declare something they would
- * have to keep in sync.
+ *
+ * The heading is the largest step by measured size, not the first one written —
+ * scales are authored in both directions, and picking by position sets the
+ * smallest step as a heading for everyone who writes theirs ascending.
+ *
+ * The body is the step named for it (`body`, `base`, `text`), falling back to
+ * the smallest. When the two would be the same step, the next distinct one is
+ * used instead of dropping the pairing: a two-step scale is exactly the case
+ * that most needs showing.
  */
 function pairing(steps: readonly ResolvedTypographyToken[]): string {
   if (steps.length < 2) {
     return "";
   }
 
-  const bodyNames = ["body", "base", "text"];
-  const heading = steps[0];
-  const body = steps.find((step) => bodyNames.includes(step.name.toLowerCase())) ?? steps.at(-1);
+  const measured = steps.map((step) => ({ step, size: sizeInPx(step.size) }));
+  const ordered = measured.every((entry) => entry.size !== undefined)
+    ? [...measured].sort((a, b) => (b.size ?? 0) - (a.size ?? 0)).map((entry) => entry.step)
+    : steps;
 
-  if (heading === undefined || body === undefined || heading === body) {
+  const bodyNames = ["body", "base", "text"];
+  const heading = ordered[0];
+  const named = ordered.find((step) => bodyNames.includes(step.name.toLowerCase()));
+  const body =
+    named !== undefined && named !== heading ? named : ordered.find((step) => step !== heading);
+
+  if (heading === undefined || body === undefined) {
     return "";
   }
 
@@ -77,13 +134,14 @@ function pairing(steps: readonly ResolvedTypographyToken[]): string {
     ["line-height", heading.lineHeight],
     ["font-weight", heading.weight],
     ["letter-spacing", heading.letterSpacing],
-    ["font-family", heading.family],
+    ["font-family", heading.family === undefined ? undefined : unquoteFamily(heading.family)],
   ]);
   const bodyStyle = safeStyle([
     ["font-size", body.size],
     ["line-height", body.lineHeight],
     ["font-weight", body.weight],
-    ["font-family", body.family],
+    ["letter-spacing", body.letterSpacing],
+    ["font-family", body.family === undefined ? undefined : unquoteFamily(body.family)],
   ]);
 
   return `<article class="pairing">

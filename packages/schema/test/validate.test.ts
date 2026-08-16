@@ -232,3 +232,84 @@ describe("contrastPairs", () => {
     expect(() => validateTokens(broken)).toThrow(/contrastPairs\[0\]: dvojice musí být objekt/);
   });
 });
+
+describe("typography", () => {
+  const step = { size: "1rem", lineHeight: "1.6", weight: "400", css: "--text-body" };
+
+  it("accepts a well-formed step with every optional field", () => {
+    const tokens = validateTokens({
+      schemaVersion: SCHEMA_VERSION,
+      typography: { body: { ...step, letterSpacing: "0", family: "Inter", description: "Text" } },
+    });
+
+    expect(tokens.typography?.body?.size).toBe("1rem");
+    expect(tokens.typography?.body?.css).toBe("--text-body");
+  });
+
+  it("accepts a step with nothing but a size", () => {
+    const tokens = validateTokens({
+      schemaVersion: SCHEMA_VERSION,
+      typography: { body: { size: "1rem" } },
+    });
+
+    expect(tokens.typography?.body).toEqual({ size: "1rem" });
+  });
+
+  it("rejects a step with no size, which has nothing to render", () => {
+    expect(() =>
+      validateTokens({
+        schemaVersion: SCHEMA_VERSION,
+        typography: { body: { lineHeight: "1.6" } },
+      }),
+    ).toThrow(/chybí povinná velikost "size"/);
+  });
+
+  it("rejects an unknown key so a typo surfaces", () => {
+    expect(() =>
+      validateTokens({
+        schemaVersion: SCHEMA_VERSION,
+        typography: { body: { size: "1rem", lineheight: "1.6" } },
+      }),
+    ).toThrow(/neznámý klíč "lineheight"/);
+  });
+
+  it.each([
+    ["a number", { size: 16 }],
+    ["only whitespace", { size: "   " }],
+    ["an object", { size: { value: "1rem" } }],
+  ])("rejects a size that is %s", (_label, broken) => {
+    expect(() =>
+      validateTokens({ schemaVersion: SCHEMA_VERSION, typography: { body: broken } }),
+    ).toThrow(/musí být neprázdný řetězec|chybí povinná velikost/);
+  });
+
+  it("rejects a css mapping that is not a custom property", () => {
+    expect(() =>
+      validateTokens({
+        schemaVersion: SCHEMA_VERSION,
+        typography: { body: { size: "1rem", css: "text-body" } },
+      }),
+    ).toThrow(/"css" musí být CSS custom property/);
+  });
+
+  it("rejects a step that is not an object", () => {
+    expect(() =>
+      validateTokens({ schemaVersion: SCHEMA_VERSION, typography: { body: "1rem" } }),
+    ).toThrow(/stupeň typografie musí být objekt/);
+  });
+
+  it("rejects a typography section that is not an object", () => {
+    expect(() => validateTokens({ schemaVersion: SCHEMA_VERSION, typography: [] })).toThrow(
+      /skupina typografie musí být objekt/,
+    );
+  });
+
+  it("applies the same dot rule to step names as to token names", () => {
+    expect(() =>
+      validateTokens({
+        schemaVersion: SCHEMA_VERSION,
+        typography: { "h1.large": { size: "3rem" } },
+      }),
+    ).toThrow(/jméno tokenu nesmí obsahovat tečku/);
+  });
+});

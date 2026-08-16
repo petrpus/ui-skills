@@ -69,6 +69,21 @@ function validateToken(raw: unknown, path: string): Token {
   return { value, ...meta };
 }
 
+/**
+ * A dot separates group from token in a `ref`, so a dotted name would produce a
+ * qualified name nobody could ever point at. Rejected where the message can
+ * name the actual problem, rather than surfacing later as a complaint about
+ * someone else's reference.
+ */
+function assertNameHasNoDot(name: string, path: string): void {
+  if (name.includes(".")) {
+    throw new TokensError(
+      "jméno tokenu nesmí obsahovat tečku — ta odděluje skupinu od jména v odkazech",
+      path,
+    );
+  }
+}
+
 function validateGroup(raw: unknown, path: string): TokenGroup {
   if (!isRecord(raw)) {
     throw new TokensError("skupina tokenů musí být objekt", path);
@@ -79,15 +94,7 @@ function validateGroup(raw: unknown, path: string): TokenGroup {
   // vanish from every later Object.entries instead of being rendered.
   const group: Record<string, Token> = Object.create(null);
   for (const [name, token] of Object.entries(raw)) {
-    if (name.includes(".")) {
-      // A dot separates group from token in a `ref`, so a dotted name would
-      // produce a qualified name nobody could ever point at. Rejected here,
-      // where the message can name the actual problem.
-      throw new TokensError(
-        `jméno tokenu nesmí obsahovat tečku — ta odděluje skupinu od jména v odkazech`,
-        `${path}.${name}`,
-      );
-    }
+    assertNameHasNoDot(name, `${path}.${name}`);
     group[name] = validateToken(token, `${path}.${name}`);
   }
   return group;
@@ -138,6 +145,10 @@ function validateTypography(raw: unknown): TypographyGroup {
 
   const group: Record<string, TypographyToken> = Object.create(null);
   for (const [name, token] of Object.entries(raw)) {
+    // Same dot rule as ordinary tokens. Typography cannot be referenced today,
+    // so this changes nothing now — it stops a name like "h1.large" from being
+    // a landmine if it ever can be.
+    assertNameHasNoDot(name, `typography.${name}`);
     group[name] = validateTypographyToken(token, `typography.${name}`);
   }
   return group;
