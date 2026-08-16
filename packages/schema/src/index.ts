@@ -8,6 +8,7 @@ export {
   type ResolvedRoles,
   type ResolvedToken,
   type ResolvedTokens,
+  type ResolvedTypographyToken,
   ROLES,
   type RoleName,
   SCHEMA_VERSION,
@@ -17,5 +18,7 @@ export {
   type TokenGroupName,
   type Tokens,
   TokensError,
+  type TypographyGroup,
+  type TypographyToken,
 } from "./types.ts";
 export { validateTokens } from "./validate.ts";

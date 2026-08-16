@@ -9,6 +9,8 @@ import {
   type TokenGroupName,
   type Tokens,
   TokensError,
+  type TypographyGroup,
+  type TypographyToken,
 } from "./types.ts";
 
 const TOKEN_KEYS = new Set(["value", "ref", "css", "description"]);
@@ -67,6 +69,21 @@ function validateToken(raw: unknown, path: string): Token {
   return { value, ...meta };
 }
 
+/**
+ * A dot separates group from token in a `ref`, so a dotted name would produce a
+ * qualified name nobody could ever point at. Rejected where the message can
+ * name the actual problem, rather than surfacing later as a complaint about
+ * someone else's reference.
+ */
+function assertNameHasNoDot(name: string, path: string): void {
+  if (name.includes(".")) {
+    throw new TokensError(
+      "jméno tokenu nesmí obsahovat tečku — ta odděluje skupinu od jména v odkazech",
+      path,
+    );
+  }
+}
+
 function validateGroup(raw: unknown, path: string): TokenGroup {
   if (!isRecord(raw)) {
     throw new TokensError("skupina tokenů musí být objekt", path);
@@ -77,16 +94,62 @@ function validateGroup(raw: unknown, path: string): TokenGroup {
   // vanish from every later Object.entries instead of being rendered.
   const group: Record<string, Token> = Object.create(null);
   for (const [name, token] of Object.entries(raw)) {
-    if (name.includes(".")) {
-      // A dot separates group from token in a `ref`, so a dotted name would
-      // produce a qualified name nobody could ever point at. Rejected here,
-      // where the message can name the actual problem.
+    assertNameHasNoDot(name, `${path}.${name}`);
+    group[name] = validateToken(token, `${path}.${name}`);
+  }
+  return group;
+}
+
+const TYPOGRAPHY_KEYS = new Set([
+  "size",
+  "lineHeight",
+  "weight",
+  "letterSpacing",
+  "family",
+  "css",
+  "description",
+]);
+
+function validateTypographyToken(raw: unknown, path: string): TypographyToken {
+  if (!isRecord(raw)) {
+    throw new TokensError("stupeň typografie musí být objekt", path);
+  }
+
+  for (const key of Object.keys(raw)) {
+    if (!TYPOGRAPHY_KEYS.has(key)) {
       throw new TokensError(
-        `jméno tokenu nesmí obsahovat tečku — ta odděluje skupinu od jména v odkazech`,
-        `${path}.${name}`,
+        `neznámý klíč "${key}" (povolené: ${[...TYPOGRAPHY_KEYS].join(", ")})`,
+        path,
       );
     }
-    group[name] = validateToken(token, `${path}.${name}`);
+    const value = raw[key];
+    if (typeof value !== "string" || value.trim() === "") {
+      throw new TokensError(`"${key}" musí být neprázdný řetězec`, path);
+    }
+  }
+
+  if (raw.css !== undefined && !CSS_CUSTOM_PROPERTY.test(raw.css as string)) {
+    throw new TokensError('"css" musí být CSS custom property, např. "--text-lg"', path);
+  }
+  if (typeof raw.size !== "string") {
+    throw new TokensError('chybí povinná velikost "size"', path);
+  }
+
+  return raw as unknown as TypographyToken;
+}
+
+function validateTypography(raw: unknown): TypographyGroup {
+  if (!isRecord(raw)) {
+    throw new TokensError("skupina typografie musí být objekt", "typography");
+  }
+
+  const group: Record<string, TypographyToken> = Object.create(null);
+  for (const [name, token] of Object.entries(raw)) {
+    // Same dot rule as ordinary tokens. Typography cannot be referenced today,
+    // so this changes nothing now — it stops a name like "h1.large" from being
+    // a landmine if it ever can be.
+    assertNameHasNoDot(name, `typography.${name}`);
+    group[name] = validateTypographyToken(token, `typography.${name}`);
   }
   return group;
 }
@@ -173,6 +236,7 @@ export function validateTokens(raw: unknown): Tokens {
   const tokens: {
     schemaVersion: number;
     name?: string;
+    typography?: TypographyGroup;
     roles?: Partial<Record<RoleName, string>>;
     contrastPairs?: ContrastPair[];
   } & Partial<Record<TokenGroupName, TokenGroup>> = { schemaVersion: SCHEMA_VERSION };
@@ -191,6 +255,9 @@ export function validateTokens(raw: unknown): Tokens {
     }
   }
 
+  if (raw.typography !== undefined) {
+    tokens.typography = validateTypography(raw.typography);
+  }
   if (raw.roles !== undefined) {
     tokens.roles = validateRoles(raw.roles);
   }

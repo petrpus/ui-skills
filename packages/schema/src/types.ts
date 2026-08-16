@@ -54,6 +54,32 @@ export interface RefToken extends TokenMeta {
 
 export type Token = LiteralToken | RefToken;
 
+/**
+ * A step on the typographic scale. Composite rather than a single value,
+ * because a step is a size *and* how it is set — a size without its line height
+ * says nothing about whether the text is readable.
+ *
+ * Deliberately outside the `ref` machinery: type steps are authored, not
+ * aliased, and giving them references would mean a resolver that answers with
+ * several values instead of one.
+ */
+export interface TypographyToken {
+  readonly size: string;
+  readonly lineHeight?: string;
+  readonly weight?: string;
+  readonly letterSpacing?: string;
+  readonly family?: string;
+  readonly css?: string;
+  readonly description?: string;
+}
+
+export type TypographyGroup = Readonly<Record<string, TypographyToken>>;
+
+/** A type step with its name, ready to render. */
+export interface ResolvedTypographyToken extends TypographyToken {
+  readonly name: string;
+}
+
 export type TokenGroup = Readonly<Record<string, Token>>;
 
 export interface Tokens {
@@ -63,6 +89,7 @@ export interface Tokens {
   readonly spacing?: TokenGroup;
   readonly radius?: TokenGroup;
   readonly shadow?: TokenGroup;
+  readonly typography?: TypographyGroup;
   readonly roles?: Readonly<Partial<Record<RoleName, string>>>;
   readonly contrastPairs?: readonly ContrastPair[];
 }
@@ -103,6 +130,7 @@ export interface ResolvedTokens {
   readonly spacing?: ResolvedGroup;
   readonly radius?: ResolvedGroup;
   readonly shadow?: ResolvedGroup;
+  readonly typography?: readonly ResolvedTypographyToken[];
   readonly roles?: ResolvedRoles;
   readonly contrastPairs?: readonly ResolvedContrastPair[];
 }

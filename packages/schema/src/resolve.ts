@@ -4,6 +4,7 @@ import {
   type ResolvedRoles,
   type ResolvedToken,
   type ResolvedTokens,
+  type ResolvedTypographyToken,
   type RoleName,
   TOKEN_GROUPS,
   type Token,
@@ -165,6 +166,7 @@ export function resolveTokens(tokens: Tokens): ResolvedTokens {
   const resolved: {
     schemaVersion: number;
     name?: string;
+    typography?: readonly ResolvedTypographyToken[];
     roles?: ResolvedRoles;
     contrastPairs?: readonly ResolvedContrastPair[];
   } & Partial<Record<TokenGroupName, ResolvedGroup>> = {
@@ -179,6 +181,13 @@ export function resolveTokens(tokens: Tokens): ResolvedTokens {
     if (tokens[groupName] !== undefined) {
       resolved[groupName] = resolveGroup(groupName, tokens, index, cache);
     }
+  }
+
+  if (tokens.typography !== undefined) {
+    resolved.typography = Object.entries(tokens.typography).map(([name, step]) => ({
+      name,
+      ...step,
+    }));
   }
 
   if (tokens.roles !== undefined) {
