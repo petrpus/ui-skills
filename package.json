@@ -1,0 +1,26 @@
+{
+  "name": "ui-skills",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Claude Code skills for visual UI review, design tokens and design-system demos",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "test": "vitest run",
+    "verify": "node scripts/verify.mjs",
+    "design-demo": "tsx packages/demo-generator/src/cli.ts"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.8",
+    "@types/node": "^26.2.0",
+    "tsx": "^4.23.12",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}

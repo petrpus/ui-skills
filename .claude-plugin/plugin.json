@@ -1,0 +1,10 @@
+{
+  "name": "ui-skills",
+  "description": "Skills pro design, ladění a revizi UI — vizuální review živých stránek, design tokeny a HTML demo design systému",
+  "version": "0.1.0",
+  "author": {
+    "name": "Petr Puš"
+  },
+  "homepage": "https://github.com/petrpus/ui-skills",
+  "license": "MIT"
+}

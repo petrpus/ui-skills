@@ -1,0 +1,13 @@
+{
+  "name": "ui-skills",
+  "owner": {
+    "name": "Petr Puš"
+  },
+  "plugins": [
+    {
+      "name": "ui-skills",
+      "source": "./",
+      "description": "Skills pro design, ladění a revizi UI — vizuální review živých stránek, design tokeny a HTML demo design systému"
+    }
+  ]
+}
