@@ -1,6 +1,7 @@
 export { resolveTokens } from "./resolve.ts";
 export {
   type ContrastPair,
+  type DarkOverride,
   type LiteralToken,
   type RefToken,
   type ResolvedContrastPair,

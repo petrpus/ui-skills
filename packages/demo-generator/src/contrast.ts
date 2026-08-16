@@ -10,6 +10,9 @@ import {
 /** How the pairs to check were arrived at. Shown in the demo, so a reader knows. */
 export type ContrastSource = "roles" | "convention" | "fallback";
 
+/** Which face of the tokens to measure. Dark mode has its own numbers. */
+export type ContrastMode = "light" | "dark";
+
 export interface ContrastCheck {
   readonly fg: ResolvedToken;
   readonly bg: ResolvedToken;
@@ -46,9 +49,14 @@ function startsWithAny(name: string, prefixes: readonly string[]): boolean {
   return prefixes.some((prefix) => lower === prefix || lower.startsWith(prefix));
 }
 
-function check(fg: ResolvedToken, bg: ResolvedToken): ContrastCheck {
-  const foreground = parseColor(fg.value);
-  const background = parseColor(bg.value);
+/** In dark mode a token shows its override if it has one, its value otherwise. */
+function faceValue(token: ResolvedToken, mode: ContrastMode): string {
+  return mode === "dark" ? (token.dark ?? token.value) : token.value;
+}
+
+function check(fg: ResolvedToken, bg: ResolvedToken, mode: ContrastMode): ContrastCheck {
+  const foreground = parseColor(faceValue(fg, mode));
+  const background = parseColor(faceValue(bg, mode));
   const unknown = { fg, bg, ratio: undefined, grade: undefined };
 
   if (foreground === undefined || background === undefined) {
@@ -66,7 +74,7 @@ function check(fg: ResolvedToken, bg: ResolvedToken): ContrastCheck {
   return { fg, bg, ratio, grade: gradeContrast(ratio) };
 }
 
-function fromRoles(tokens: ResolvedTokens): ContrastReport | undefined {
+function fromRoles(tokens: ResolvedTokens, mode: ContrastMode): ContrastReport | undefined {
   const roles = tokens.roles;
   if (roles === undefined) {
     return undefined;
@@ -77,14 +85,14 @@ function fromRoles(tokens: ResolvedTokens): ContrastReport | undefined {
     const fg = roles[fgRole];
     const bg = roles[bgRole];
     if (fg !== undefined && bg !== undefined) {
-      checks.push(check(fg, bg));
+      checks.push(check(fg, bg, mode));
     }
   }
 
   return checks.length > 0 ? { source: "roles", checks } : undefined;
 }
 
-function fromConvention(tokens: ResolvedTokens): ContrastReport | undefined {
+function fromConvention(tokens: ResolvedTokens, mode: ContrastMode): ContrastReport | undefined {
   const colors = tokens.color ?? [];
   const foregrounds = colors.filter((token) => startsWithAny(token.name, FOREGROUND_PREFIXES));
   const backgrounds = colors.filter((token) => startsWithAny(token.name, BACKGROUND_PREFIXES));
@@ -93,7 +101,7 @@ function fromConvention(tokens: ResolvedTokens): ContrastReport | undefined {
     return undefined;
   }
 
-  const checks = foregrounds.flatMap((fg) => backgrounds.map((bg) => check(fg, bg)));
+  const checks = foregrounds.flatMap((fg) => backgrounds.map((bg) => check(fg, bg, mode)));
   return { source: "convention", checks };
 }
 
@@ -102,7 +110,7 @@ function fromConvention(tokens: ResolvedTokens): ContrastReport | undefined {
  * used, but it is always true and needs no configuration — better than an empty
  * section that leaves a reader wondering what went wrong.
  */
-function fromFallback(tokens: ResolvedTokens): ContrastReport {
+function fromFallback(tokens: ResolvedTokens, mode: ContrastMode): ContrastReport {
   const black: ResolvedToken = {
     name: "černá",
     qualifiedName: "#000000",
@@ -117,8 +125,8 @@ function fromFallback(tokens: ResolvedTokens): ContrastReport {
   };
 
   const checks = (tokens.color ?? []).flatMap((token) => [
-    check(black, token),
-    check(white, token),
+    check(black, token, mode),
+    check(white, token, mode),
   ]);
 
   return { source: "fallback", checks };
@@ -132,13 +140,17 @@ function fromFallback(tokens: ResolvedTokens): ContrastReport {
  * Explicit `contrastPairs` are added to whatever the level produced rather than
  * replacing it — they exist to cover what roles miss, not to take over the job.
  */
-export function reportContrast(tokens: ResolvedTokens): ContrastReport | undefined {
+export function reportContrast(
+  tokens: ResolvedTokens,
+  mode: ContrastMode = "light",
+): ContrastReport | undefined {
   if ((tokens.color ?? []).length === 0 && (tokens.contrastPairs ?? []).length === 0) {
     return undefined;
   }
 
-  const report = fromRoles(tokens) ?? fromConvention(tokens) ?? fromFallback(tokens);
-  const declared = (tokens.contrastPairs ?? []).map((pair) => check(pair.fg, pair.bg));
+  const report =
+    fromRoles(tokens, mode) ?? fromConvention(tokens, mode) ?? fromFallback(tokens, mode);
+  const declared = (tokens.contrastPairs ?? []).map((pair) => check(pair.fg, pair.bg, mode));
 
   if (declared.length === 0) {
     return report;
