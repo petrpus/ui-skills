@@ -19,9 +19,11 @@ V tomto pořadí:
 2. `tokens.json` v kořeni projektu;
 3. `design/tokens.json`, `docs/tokens.json`.
 
-Když soubor neexistuje, spusť nástroj bez cesty — založí starter a vygeneruje
-z něj demo. Neopisuj tokeny z Tailwind configu ani z CSS ručně: vytěžení ze
-zdrojáků je `/extract-tokens` (fáze 2), ne práce agenta.
+Když soubor neexistuje, nástroj skončí chybou `tokens.json nenalezen` — řekni
+to uživateli a nabídni, že spolu tokeny sepíšete. **Nezakládej `tokens.json`
+sám podle svého odhadu** a neopisuj tokeny z Tailwind configu ani z CSS:
+vytěžení ze zdrojáků je `/extract-tokens` (fáze 2) a automatické založení
+starteru je samostatná práce, ne věc k improvizaci ve skillu.
 
 ### 2. Zavolej generátor
 

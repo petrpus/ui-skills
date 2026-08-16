@@ -1,6 +1,6 @@
 export const SCHEMA_VERSION = 1;
 
-/** Token groups the demo knows how to render. Unknown groups are carried but ignored. */
+/** Token groups the validator knows. Groups outside this list are dropped, not rejected. */
 export const TOKEN_GROUPS = ["color", "spacing", "radius", "shadow"] as const;
 
 export type TokenGroupName = (typeof TOKEN_GROUPS)[number];

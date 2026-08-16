@@ -86,6 +86,24 @@ describe("renderDemo", () => {
     expect(hostile).toContain("evil");
   });
 
+  it.each([
+    ["absolute", "url(https://evil.example.com/track.png)"],
+    ["protocol-relative", "url(//evil.example.com/track.png)"],
+    ["quoted", 'url("https://evil.example.com/track.png")'],
+    ["spaced", "url  (https://evil.example.com/track.png)"],
+    ["uppercase", "URL(https://evil.example.com/track.png)"],
+    ["data uri", "url(data:image/gif;base64,R0lGOD)"],
+  ])("keeps a %s url out of the stylesheet, so the file still opens offline", (_label, value) => {
+    const html = renderDemo({
+      schemaVersion: SCHEMA_VERSION,
+      color: { sneaky: { value } },
+    });
+
+    expect(html).not.toMatch(/style="[^"]*url/i);
+    expect(html).not.toMatch(/(?:src|href)\s*=\s*["']https?:/i);
+    expect(html).toContain("sneaky");
+  });
+
   it("counts tokens with the right Czech plural form", () => {
     const one = renderDemo({ schemaVersion: SCHEMA_VERSION, color: { a: { value: "#000" } } });
     const three = renderDemo({

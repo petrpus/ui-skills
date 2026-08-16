@@ -69,6 +69,28 @@ describe("validateTokens", () => {
     expect(() => validateTokens(broken)).toThrow(/neznámý klíč "valeu"/);
   });
 
+  it("keeps a token named __proto__ instead of letting it vanish into the prototype", () => {
+    // Built through JSON.parse on purpose: that is how tokens actually arrive,
+    // and unlike an object literal it gives __proto__ as an own property.
+    const raw = JSON.parse(
+      `{"schemaVersion": ${SCHEMA_VERSION},
+        "color": {"__proto__": {"value": "#f00"}, "primary": {"value": "#000"}}}`,
+    );
+
+    const tokens = validateTokens(raw);
+
+    expect(Object.keys(tokens.color ?? {}).sort()).toEqual(["__proto__", "primary"]);
+  });
+
+  it("keeps token names with diacritics and other non-ASCII characters", () => {
+    const tokens = validateTokens({
+      schemaVersion: SCHEMA_VERSION,
+      color: { "šedá-60": { value: "#999" }, "café-☂": { value: "#0f0" } },
+    });
+
+    expect(Object.keys(tokens.color ?? {}).sort()).toEqual(["café-☂", "šedá-60"]);
+  });
+
   it("rejects a token that is not an object", () => {
     const broken = { schemaVersion: SCHEMA_VERSION, color: { primary: "#fff" } };
 

@@ -44,7 +44,10 @@ function validateGroup(raw: unknown, path: string): TokenGroup {
     throw new TokensError("skupina tokenů musí být objekt", path);
   }
 
-  const group: Record<string, Token> = {};
+  // A null prototype, because token names come from an untrusted document: a
+  // token called `__proto__` would otherwise hit the inherited setter and
+  // vanish from every later Object.entries instead of being rendered.
+  const group: Record<string, Token> = Object.create(null);
   for (const [name, token] of Object.entries(raw)) {
     group[name] = validateToken(token, `${path}.${name}`);
   }
