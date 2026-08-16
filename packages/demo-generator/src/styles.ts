@@ -159,6 +159,23 @@ body {
   color: var(--ui-ink-soft); overflow-wrap: anywhere;
 }
 
+.showcase { display: grid; gap: 1.5rem; }
+.showcase__hero { max-width: 40em; }
+.showcase__heading { margin: 0; }
+.showcase__lead { margin: 0; }
+.showcase__button {
+  display: inline-block; border: 0; cursor: default;
+  padding: 0.625rem 1.25rem; font-weight: 600;
+}
+.showcase__cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: 1rem; }
+.showcase__card { border: 1px solid; }
+.showcase__card-title { margin: 0; font-weight: 600; }
+.showcase__card-text { margin: 0; }
+.showcase__form { border: 1px solid; max-width: 26rem; }
+.showcase__label { display: block; font-weight: 600; }
+.showcase__field { display: block; width: 100%; border: 1px solid; font: inherit; }
+.showcase__error { margin: 0; }
+
 .empty {
   color: var(--ui-ink-soft); font-size: 0.9375rem;
   border: 1px dashed var(--ui-line); border-radius: var(--ui-radius); padding: 1.5rem;

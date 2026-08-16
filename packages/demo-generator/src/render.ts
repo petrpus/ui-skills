@@ -2,6 +2,7 @@ import type { ResolvedGroup, ResolvedToken, ResolvedTokens } from "@ui-skills/sc
 import { type ContrastCheck, type ContrastReport, reportContrast } from "./contrast.ts";
 import { escapeHtml, isSafeCssValue, section } from "./html.ts";
 import { radiusSection, shadowSection, spacingSection, typographySection } from "./scales.ts";
+import { showcaseSection } from "./showcase.ts";
 import { DEMO_STYLES } from "./styles.ts";
 
 /**
@@ -133,6 +134,7 @@ export function renderDemo(tokens: ResolvedTokens): string {
   const title = tokens.name ?? "Design systém";
   const count = countTokens(tokens);
   const contrast = reportContrast(tokens);
+  const showcase = showcaseSection(tokens);
   const sections = [
     tokens.color ? colorSection(tokens.color) : "",
     contrast ? contrastSection(contrast) : "",
@@ -140,11 +142,24 @@ export function renderDemo(tokens: ResolvedTokens): string {
     tokens.spacing ? spacingSection(tokens.spacing) : "",
     tokens.radius ? radiusSection(tokens.radius) : "",
     tokens.shadow ? shadowSection(tokens.shadow) : "",
+    // Last on purpose: the ladders above say what the system contains, and this
+    // says whether it holds together. Reading it the other way round asks
+    // someone to judge a composition before seeing its parts.
+    showcase.html,
   ].filter(Boolean);
+
+  // Absent because roles are missing, not because something broke — said out
+  // loud so nobody goes looking for a bug in the generator.
+  const showcaseNote =
+    showcase.missing.length > 0 && sections.length > 0
+      ? `<p class="empty">Ukázková sekce se nevykreslila — chybí role: ${escapeHtml(
+          showcase.missing.join(", "),
+        )}. Doplň je do tokens.json v sekci "roles".</p>`
+      : "";
 
   const body =
     sections.length > 0
-      ? sections.join("\n\n  ")
+      ? [...sections, showcaseNote].filter(Boolean).join("\n\n  ")
       : '<p class="empty">Zatím žádné tokeny k zobrazení. Doplň je do tokens.json a spusť generátor znovu.</p>';
 
   return `<!doctype html>
