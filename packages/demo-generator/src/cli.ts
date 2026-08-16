@@ -3,10 +3,12 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { resolveTokens, TokensError, validateTokens } from "@ui-skills/schema";
 import { renderDemo } from "./render.ts";
+import { serializeStarter } from "./starter.ts";
 
 const USAGE = `Použití: design-demo [tokens.json] [--out <soubor>]
 
   tokens.json   cesta k souboru s tokeny (výchozí: ./tokens.json)
+                když soubor neexistuje, založí se základ k přepsání
   --out         kam zapsat demo (výchozí: demo.html vedle tokens.json)`;
 
 export interface CliArgs {
@@ -48,14 +50,7 @@ export function resolveOutPath(tokensPath: string, outPath: string | undefined):
   return isAbsolute(outPath) ? outPath : resolve(outPath);
 }
 
-function readTokensFile(path: string): unknown {
-  let raw: string;
-  try {
-    raw = readFileSync(path, "utf8");
-  } catch {
-    throw new Error(`tokens.json nenalezen: ${path}`);
-  }
-
+function parseTokensFile(raw: string): unknown {
   try {
     return JSON.parse(raw);
   } catch (error) {
@@ -63,13 +58,56 @@ function readTokensFile(path: string): unknown {
   }
 }
 
-export function run(argv: readonly string[]): string {
+/**
+ * Reads the tokens, writing a starter first if there is nothing to read.
+ *
+ * A missing file is the first run, not a mistake, and answering it with an
+ * error hands someone an hour of transcribing JSON before they see anything.
+ * The starter is neutral and meant to be overwritten.
+ *
+ * Uses an exclusive write rather than checking for the file first: the check
+ * and the write would be two moments, and only the filesystem can make them
+ * one. An existing tokens.json is the author's own work and must never be lost
+ * to this.
+ */
+function readOrCreateTokens(path: string): { raw: string; created: boolean } {
+  try {
+    return { raw: readFileSync(path, "utf8"), created: false };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      throw new Error(`tokens.json nelze přečíst: ${(error as Error).message}`);
+    }
+  }
+
+  const starter = serializeStarter();
+  try {
+    writeFileSync(path, starter, { flag: "wx" });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      return { raw: readFileSync(path, "utf8"), created: false };
+    }
+    throw new Error(`tokens.json nelze založit: ${(error as Error).message}`);
+  }
+
+  return { raw: starter, created: true };
+}
+
+export interface RunResult {
+  readonly demoPath: string;
+  readonly tokensPath: string;
+  /** True when this run had to write the starter, i.e. the first run in a project. */
+  readonly createdStarter: boolean;
+}
+
+export function run(argv: readonly string[]): RunResult {
   const { tokensPath, outPath } = parseArgs(argv);
-  const tokens = resolveTokens(validateTokens(readTokensFile(resolve(tokensPath))));
+  const absoluteTokens = resolve(tokensPath);
+  const { raw, created } = readOrCreateTokens(absoluteTokens);
+  const tokens = resolveTokens(validateTokens(parseTokensFile(raw)));
   const target = resolveOutPath(tokensPath, outPath);
 
   writeFileSync(target, renderDemo(tokens));
-  return target;
+  return { demoPath: target, tokensPath: absoluteTokens, createdStarter: created };
 }
 
 function main(): void {
@@ -80,8 +118,17 @@ function main(): void {
   }
 
   try {
-    const target = run(argv);
-    process.stdout.write(`✓ demo vygenerováno: ${target}\n`);
+    const { demoPath, tokensPath, createdStarter } = run(argv);
+    if (createdStarter) {
+      process.stdout.write(
+        `tokens.json nenalezen — zakládám základ k přepsání\n` +
+          `  ✓ ${tokensPath}\n` +
+          `  ✓ ${demoPath}\n\n` +
+          `Přepiš hodnoty v tokens.json svými a spusť znovu.\n`,
+      );
+      return;
+    }
+    process.stdout.write(`✓ demo vygenerováno: ${demoPath}\n`);
   } catch (error) {
     const message = error instanceof TokensError ? error.message : (error as Error).message;
     process.stderr.write(`✗ ${message}\n`);
