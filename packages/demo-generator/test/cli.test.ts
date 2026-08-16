@@ -68,22 +68,19 @@ describe("run", () => {
       color: { primary: { value: "#2563eb" } },
     });
 
-    const target = run([path]);
+    const { demoPath, createdStarter } = run([path]);
 
-    expect(target).toBe(join(dir, "demo.html"));
-    expect(readFileSync(target, "utf8")).toContain("#2563eb");
+    expect(demoPath).toBe(join(dir, "demo.html"));
+    expect(createdStarter).toBe(false);
+    expect(readFileSync(demoPath, "utf8")).toContain("#2563eb");
   });
 
   it("writes to --out when given one", () => {
     const path = writeTokens({ schemaVersion: SCHEMA_VERSION });
     const out = join(dir, "nested-name.html");
 
-    expect(run([path, "--out", out])).toBe(out);
+    expect(run([path, "--out", out]).demoPath).toBe(out);
     expect(readFileSync(out, "utf8")).toContain("<!doctype html>");
-  });
-
-  it("explains which file was missing", () => {
-    expect(() => run([join(dir, "nikde.json")])).toThrow(/tokens.json nenalezen/);
   });
 
   it("explains that the file is not valid JSON", () => {

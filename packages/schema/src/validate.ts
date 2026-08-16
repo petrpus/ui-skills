@@ -248,6 +248,11 @@ export function validateTokens(raw: unknown): Tokens {
     tokens.name = raw.name;
   }
 
+  // Only known top-level keys are carried over; anything else is dropped
+  // rather than rejected. That permissiveness is load-bearing: the starter
+  // document explains itself in a `_readme` key, because JSON has no comments.
+  // Tightening this into an allowlist would break it silently — see the test
+  // "keeps the explanation out of the validated result".
   for (const groupName of TOKEN_GROUPS) {
     const group = raw[groupName];
     if (group !== undefined) {
