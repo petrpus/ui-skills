@@ -26,12 +26,14 @@ describe("validateTokens", () => {
   });
 
   it("ignores groups it does not know yet instead of rejecting them", () => {
+    // `motion` is not a group this version renders. A document may carry it —
+    // being ahead of the tool is not an error — but it does not come through.
     const tokens = validateTokens({
       ...valid,
-      typography: { body: { value: "1rem" } },
+      motion: { fast: { value: "120ms" } },
     });
 
-    expect(tokens).not.toHaveProperty("typography");
+    expect(tokens).not.toHaveProperty("motion");
     expect(tokens.color?.primary?.value).toBe("#2563eb");
   });
 

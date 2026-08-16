@@ -1,6 +1,7 @@
 import type { ResolvedGroup, ResolvedToken, ResolvedTokens } from "@ui-skills/schema";
 import { type ContrastCheck, type ContrastReport, reportContrast } from "./contrast.ts";
 import { escapeHtml, isSafeCssValue, section } from "./html.ts";
+import { radiusSection, shadowSection, spacingSection, typographySection } from "./scales.ts";
 import { DEMO_STYLES } from "./styles.ts";
 
 /**
@@ -103,7 +104,13 @@ function contrastSection(report: ContrastReport): string {
 }
 
 function countTokens(tokens: ResolvedTokens): number {
-  return tokens.color?.length ?? 0;
+  return (
+    (tokens.color?.length ?? 0) +
+    (tokens.typography?.length ?? 0) +
+    (tokens.spacing?.length ?? 0) +
+    (tokens.radius?.length ?? 0) +
+    (tokens.shadow?.length ?? 0)
+  );
 }
 
 /** Czech needs three forms: 1 token, 2–4 tokeny, 0 and 5+ tokenů. */
@@ -129,6 +136,10 @@ export function renderDemo(tokens: ResolvedTokens): string {
   const sections = [
     tokens.color ? colorSection(tokens.color) : "",
     contrast ? contrastSection(contrast) : "",
+    tokens.typography ? typographySection(tokens.typography) : "",
+    tokens.spacing ? spacingSection(tokens.spacing) : "",
+    tokens.radius ? radiusSection(tokens.radius) : "",
+    tokens.shadow ? shadowSection(tokens.shadow) : "",
   ].filter(Boolean);
 
   const body =

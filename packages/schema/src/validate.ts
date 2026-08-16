@@ -9,6 +9,8 @@ import {
   type TokenGroupName,
   type Tokens,
   TokensError,
+  type TypographyGroup,
+  type TypographyToken,
 } from "./types.ts";
 
 const TOKEN_KEYS = new Set(["value", "ref", "css", "description"]);
@@ -87,6 +89,56 @@ function validateGroup(raw: unknown, path: string): TokenGroup {
       );
     }
     group[name] = validateToken(token, `${path}.${name}`);
+  }
+  return group;
+}
+
+const TYPOGRAPHY_KEYS = new Set([
+  "size",
+  "lineHeight",
+  "weight",
+  "letterSpacing",
+  "family",
+  "css",
+  "description",
+]);
+
+function validateTypographyToken(raw: unknown, path: string): TypographyToken {
+  if (!isRecord(raw)) {
+    throw new TokensError("stupeň typografie musí být objekt", path);
+  }
+
+  for (const key of Object.keys(raw)) {
+    if (!TYPOGRAPHY_KEYS.has(key)) {
+      throw new TokensError(
+        `neznámý klíč "${key}" (povolené: ${[...TYPOGRAPHY_KEYS].join(", ")})`,
+        path,
+      );
+    }
+    const value = raw[key];
+    if (typeof value !== "string" || value.trim() === "") {
+      throw new TokensError(`"${key}" musí být neprázdný řetězec`, path);
+    }
+  }
+
+  if (raw.css !== undefined && !CSS_CUSTOM_PROPERTY.test(raw.css as string)) {
+    throw new TokensError('"css" musí být CSS custom property, např. "--text-lg"', path);
+  }
+  if (typeof raw.size !== "string") {
+    throw new TokensError('chybí povinná velikost "size"', path);
+  }
+
+  return raw as unknown as TypographyToken;
+}
+
+function validateTypography(raw: unknown): TypographyGroup {
+  if (!isRecord(raw)) {
+    throw new TokensError("skupina typografie musí být objekt", "typography");
+  }
+
+  const group: Record<string, TypographyToken> = Object.create(null);
+  for (const [name, token] of Object.entries(raw)) {
+    group[name] = validateTypographyToken(token, `typography.${name}`);
   }
   return group;
 }
@@ -173,6 +225,7 @@ export function validateTokens(raw: unknown): Tokens {
   const tokens: {
     schemaVersion: number;
     name?: string;
+    typography?: TypographyGroup;
     roles?: Partial<Record<RoleName, string>>;
     contrastPairs?: ContrastPair[];
   } & Partial<Record<TokenGroupName, TokenGroup>> = { schemaVersion: SCHEMA_VERSION };
@@ -191,6 +244,9 @@ export function validateTokens(raw: unknown): Tokens {
     }
   }
 
+  if (raw.typography !== undefined) {
+    tokens.typography = validateTypography(raw.typography);
+  }
   if (raw.roles !== undefined) {
     tokens.roles = validateRoles(raw.roles);
   }
