@@ -87,21 +87,47 @@ describe("renderDemo", () => {
   });
 
   it.each([
-    ["absolute", "url(https://evil.example.com/track.png)"],
-    ["protocol-relative", "url(//evil.example.com/track.png)"],
-    ["quoted", 'url("https://evil.example.com/track.png")'],
-    ["spaced", "url  (https://evil.example.com/track.png)"],
-    ["uppercase", "URL(https://evil.example.com/track.png)"],
+    ["absolute url", "url(https://evil.example.com/track.png)"],
+    ["protocol-relative url", "url(//evil.example.com/track.png)"],
+    ["quoted url", 'url("https://evil.example.com/track.png")'],
+    ["spaced url", "url  (https://evil.example.com/track.png)"],
+    ["uppercase url", "URL(https://evil.example.com/track.png)"],
     ["data uri", "url(data:image/gif;base64,R0lGOD)"],
-  ])("keeps a %s url out of the stylesheet, so the file still opens offline", (_label, value) => {
+    ["image-set", 'image-set("https://evil.example.com/track.png" 1x)'],
+    ["-webkit-image-set", '-webkit-image-set("https://evil.example.com/track.png" 1x)'],
+    ["cross-fade", 'cross-fade("https://evil.example.com/track.png")'],
+    ["css-escaped url", "\\75 rl(https://evil.example.com/track.png)"],
+    ["unknown function", "totally-new-fetcher(https://evil.example.com/track.png)"],
+  ])("keeps %s out of the stylesheet, so the file still opens offline", (_label, value) => {
     const html = renderDemo({
       schemaVersion: SCHEMA_VERSION,
       color: { sneaky: { value } },
     });
 
-    expect(html).not.toMatch(/style="[^"]*url/i);
+    expect(html).not.toMatch(/style="[^"]*evil\.example\.com/i);
+    expect(html).not.toMatch(/style="[^"]*(?:url|image-set|cross-fade)/i);
     expect(html).not.toMatch(/(?:src|href)\s*=\s*["']https?:/i);
     expect(html).toContain("sneaky");
+  });
+
+  it.each([
+    ["hex", "#2563eb"],
+    ["hex with alpha", "#2563ebcc"],
+    ["named colour", "rebeccapurple"],
+    ["keyword", "currentColor"],
+    ["rgb", "rgb(37 99 235 / 0.5)"],
+    ["hsl", "hsl(210deg 90% 55%)"],
+    ["oklch", "oklch(0.65 0.2 255)"],
+    ["custom property", "var(--color-primary)"],
+    ["colour mix", "color-mix(in oklch, red 50%, blue)"],
+    ["calc", "calc(100% - 2rem)"],
+  ])("still paints a swatch for a legitimate %s value", (_label, value) => {
+    const html = renderDemo({
+      schemaVersion: SCHEMA_VERSION,
+      color: { ok: { value } },
+    });
+
+    expect(html).toMatch(/<span style="background: /);
   });
 
   it("counts tokens with the right Czech plural form", () => {
