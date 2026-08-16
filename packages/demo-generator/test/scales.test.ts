@@ -196,9 +196,12 @@ describe("pairing across scale orderings", () => {
     expect(html).toContain("Párování h1 + body");
   });
 
-  it("leaves a step it cannot measure where the author put it", () => {
-    // `inherit` carries no length at all. The measurable steps still sort among
-    // themselves rather than the whole ordering giving up.
+  it("falls back to the author's order when one step cannot be measured", () => {
+    // A deliberate trade. Sorting the measurable steps among themselves reads
+    // well here — big over small — but the same rule crowns a lone literal step
+    // on a scale written through CSS custom properties, where it is usually the
+    // smallest. Partial measurement is not evidence about what it could not
+    // read, so the whole ordering defers to the document.
     const html = render({
       schemaVersion: SCHEMA_VERSION,
       typography: {
@@ -208,7 +211,7 @@ describe("pairing across scale orderings", () => {
       },
     });
 
-    expect(html).toContain("Párování big + small");
+    expect(html).toContain("Párování odd + big");
   });
 
   it("falls back to document order when nothing can be measured", () => {
@@ -255,5 +258,65 @@ describe("pairing across scale orderings", () => {
 
     expect(html).not.toMatch(/style="[^"]*evil\.example\.com/i);
     expect(html).toMatch(/style="font-size: 1rem"/);
+  });
+});
+
+describe("what counts as a measurable size", () => {
+  it("does not crown a lone literal step on a scale written through variables", () => {
+    // The case that prompted this: a team moving an existing CSS-variable type
+    // system into tokens.json. Reading the one literal as the biggest made a
+    // step named `tiny` the heading.
+    const html = render({
+      schemaVersion: SCHEMA_VERSION,
+      typography: {
+        h1: { size: "var(--fs-h1)" },
+        h2: { size: "var(--fs-h2)" },
+        tiny: { size: "0.5rem" },
+      },
+    });
+
+    expect(html).toContain("Párování h1 + tiny");
+    expect(html).not.toMatch(/Párování tiny/);
+  });
+
+  it.each([
+    ["min", "min(4rem, 10vw)"],
+    ["max", "max(1rem, 2vw)"],
+    ["calc", "calc(100% - 2rem)"],
+    ["var", "var(--fs-h1)"],
+    ["a keyword", "inherit"],
+  ])("treats %s as unmeasurable rather than reading a number out of it", (_label, size) => {
+    // Each of these has a number in it that is not the size it renders:
+    // min() caps rather than sets, calc() here goes negative, var() is elsewhere.
+    const html = render({
+      schemaVersion: SCHEMA_VERSION,
+      typography: { first: { size }, second: { size: "0.5rem" } },
+    });
+
+    expect(html).toContain("Párování first + second");
+  });
+
+  it("measures a clamp by its upper bound, which is the size it grows to", () => {
+    const html = render({
+      schemaVersion: SCHEMA_VERSION,
+      typography: {
+        body: { size: "1rem" },
+        hero: { size: "clamp(2rem, 4vw, 3.5rem)" },
+      },
+    });
+
+    expect(html).toContain("Párování hero + body");
+  });
+
+  it("gives up on a clamp whose upper bound it cannot read", () => {
+    const html = render({
+      schemaVersion: SCHEMA_VERSION,
+      typography: {
+        body: { size: "1rem" },
+        hero: { size: "clamp(2rem, 4vw, 8vw)" },
+      },
+    });
+
+    expect(html).toContain("Párování body + hero");
   });
 });
