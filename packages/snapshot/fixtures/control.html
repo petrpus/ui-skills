@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<title>Kontrolní vzorek pro spike</title>
+<style>
+  :root {
+    --brand: #2563eb;
+    --surface: #ffffff;
+    --ink: #18181b;
+    --gap: 16px;
+  }
+
+  body { background: var(--surface); color: var(--ink); font-family: system-ui, sans-serif; margin: 0; }
+  .wrap { padding: var(--gap); max-width: 60rem; margin: 0 auto; }
+  .banner { background: var(--brand); color: #fff; padding: var(--gap); border-radius: 8px; }
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--gap); margin-top: var(--gap); }
+  .card { border: 1px solid #e4e4e7; border-radius: 8px; padding: var(--gap); }
+  .note { color: var(--brand); }
+
+  /* Whether these still respond after serialisation is criterion (b). */
+  @media (max-width: 600px) {
+    .cards { grid-template-columns: 1fr; }
+    .banner { background: #dc2626; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="banner" id="banner">
+    <h1>Kontrolní vzorek</h1>
+    <p class="note" id="note">Tenhle odstavec bere barvu z custom property.</p>
+  </header>
+
+  <section class="cards" id="cards">
+    <article class="card"><h2>První</h2><p>Text karty jedna.</p></article>
+    <article class="card"><h2>Druhá</h2><p>Text karty dvě.</p></article>
+    <article class="card"><h2>Třetí</h2><p>Text karty tři.</p></article>
+  </section>
+
+  <div id="host"></div>
+
+  <p id="written-by-script">Tenhle text má přepsat skript.</p>
+</div>
+
+<script>
+  // Shadow DOM with its own stylesheet: does the serialiser carry it across?
+  const host = document.getElementById("host");
+  const shadow = host.attachShadow({ mode: "open" });
+  shadow.innerHTML =
+    '<style>.inner { color: var(--brand); padding: 8px; }</style>' +
+    '<p class="inner" id="shadow-text">Odstavec ve stínovém stromu.</p>';
+
+  // A style injected at runtime, the way CSS-in-JS libraries do it.
+  const injected = document.createElement("style");
+  injected.textContent = ".card h2 { letter-spacing: 0.02em; color: var(--brand); }";
+  document.head.append(injected);
+
+  // Proof the page ran: if the snapshot still says "má přepsat", the script
+  // never ran there — which for criterion (d) is the wanted answer.
+  document.getElementById("written-by-script").textContent =
+    "Tenhle text přepsal skript při načtení.";
+
+  // Something that would keep running if scripts survived serialisation.
+  let ticks = 0;
+  setInterval(() => {
+    ticks += 1;
+    document.title = `Kontrolní vzorek pro spike (${ticks})`;
+  }, 200);
+</script>
+</body>
+</html>
