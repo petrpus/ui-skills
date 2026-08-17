@@ -194,6 +194,16 @@ describe("the assumptions the whole project rests on", () => {
     }
   });
 
+  it("(d) carries no way to execute, even without a script tag", async () => {
+    // The fixture ships the paths that need no script element: an executable
+    // href, a ping, and a frame whose inlined document runs on load. Unit tests
+    // cover the filter; this checks what actually ends up in the file.
+    const snapshot = readFileSync(result.snapshotPath, "utf8");
+
+    expect(snapshot).not.toMatch(/javascript:/i);
+    expect(snapshot).toMatch(/<iframe[^>]*sandbox=""/);
+  });
+
   it("(d) runs nothing and asks for nothing", async () => {
     const { browser, page, requests } = await openSnapshot();
 

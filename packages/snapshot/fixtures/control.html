@@ -61,6 +61,14 @@
   </svg>
 
   <p id="written-by-script">Tenhle text má přepsat skript.</p>
+
+  <!-- Spouštěcí cesty bez jediného <script>. Zachycení je má zneškodnit;
+       prohlížečová sada pak kontroluje, že v kopii nezůstaly. -->
+  <p id="pasti">
+    <a id="past-href" href="javascript:steal()">odkaz</a>
+    <a id="past-ping" href="/ok" ping="javascript:steal()">odkaz s ping</a>
+    <iframe id="past-ram" srcdoc="&lt;script&gt;parent.postMessage('pwned','*')&lt;/script&gt;"></iframe>
+  </p>
 </div>
 
 <script>

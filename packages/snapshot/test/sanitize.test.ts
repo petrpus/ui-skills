@@ -85,6 +85,15 @@ describe("things that run without a script tag", () => {
     expect(removed).toBe(1);
   });
 
+  it("sandboxes a legacy frame the same way", () => {
+    const { html, removed } = sanitize(
+      '<html><frameset><frame src="data:text/html,<script>steal()</script>"></frameset></html>',
+    );
+
+    expect(html).toContain('sandbox=""');
+    expect(removed).toBeGreaterThan(0);
+  });
+
   it("leaves an already sandboxed frame alone", () => {
     const { removed } = sanitize(
       '<html><body><iframe sandbox="" srcdoc="ahoj"></iframe></body></html>',
@@ -93,11 +102,17 @@ describe("things that run without a script tag", () => {
     expect(removed).toBe(0);
   });
 
+  // One case per attribute the filter knows about. Shrinking that list to the
+  // few with visible tests is a plausible tidy-up, and with four of seven
+  // covered it left both suites green while reopening three holes.
   it.each([
     ["href", `<a href="javascript:steal()">odkaz</a>`],
     ["src", `<img src="javascript:steal()">`],
     ["formaction", `<button formaction="javascript:steal()">odeslat</button>`],
     ["action", `<form action="javascript:steal()"></form>`],
+    ["xlink:href", `<svg><use xlink:href="javascript:steal()"/></svg>`],
+    ["data", `<object data="javascript:steal()"></object>`],
+    ["ping", `<a href="/ok" ping="javascript:steal()">odkaz</a>`],
   ])("drops a %s that would execute instead of fetch", (attribute, markup) => {
     const { html, removed } = sanitize(`<html><body>${markup}</body></html>`);
 
