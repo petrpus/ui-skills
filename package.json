@@ -15,11 +15,14 @@
     "lint:fix": "biome check --write .",
     "test": "vitest run",
     "verify": "node scripts/verify.mjs",
-    "design-demo": "tsx packages/demo-generator/src/cli.ts"
+    "design-demo": "tsx packages/demo-generator/src/cli.ts",
+    "spike:snapshot": "tsx packages/snapshot/spike/run.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.8",
     "@types/node": "^26.2.0",
+    "playwright": "^1.62.1",
+    "single-file-cli": "^2.0.83",
     "tsx": "^4.23.12",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
