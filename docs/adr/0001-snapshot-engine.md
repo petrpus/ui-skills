@@ -37,17 +37,25 @@ rovnocenný. Proto je stav *přijato předběžně*: viz „Co by rozhodnutí ob
 | --- | --- | --- | --- |
 | (a) custom properties přežily | 5 z 5 | 2035 z 2230 | 776 ze 777 |
 | (a) a jsou přepsatelné | **5 z 5** | **4 z 12** | **3 z 12** |
-| (b) media queries reagují | ano, 8→8 skrytých | ano, 154→208 skrytých | ano, 55→60 skrytých |
-| (c) obsahová kostra sedí | 100 % (šum 0 %) | **78,5 %** (šum 0 %) | 67,7 % (šum 29,6 %) |
+| (b) media queries reagují | **2 ze 2** (100 %) | **75 ze 116** (65 %) | **6 ze 7** (86 %) |
+| (c) obsahová kostra sedí | 100 % (šum 0 %) | **78,5 %** (šum 0 %) | 97,2 % (šum 0 %) |
 | (d) kopie je netečná | 0 / 0 / 0 | 0 / 0 / 0 | 0 / 0 / 0 |
 
-Velikost a čas: 3 kB / 4,1 s · 1027 kB / 11,4 s · 1292 kB / 7,8 s.
+Velikost a čas: 3 kB / 4,1 s · 1027 kB / 10,1 s · 1292 kB / 7,5 s.
 
-U (a) se zapisuje zlomek, ne „ano" — polovina hodnoty tohohle čísla je v tom,
-jak je těsné. U (c) je vedle výsledku šum, tedy jak moc se stránka liší sama od
-sebe mezi dvěma načteními; bez něj to číslo nejde číst. U MUI je šum 29,6 %,
-takže 67,7 % znamená „ne horší než sama stránka", u GitHubu je šum nulový a
-78,5 % je skutečná ztráta.
+U (a) i (b) se zapisuje zlomek, ne „ano" — polovina hodnoty tohohle čísla je
+v tom, jak je těsné, a boolean by to schoval. U (c) je vedle výsledku šum, tedy
+jak moc se stránka liší sama od sebe mezi dvěma načteními; bez něj to číslo
+nejde číst.
+
+**Měřidlo samo bylo dvakrát vedle a obakrát v neprospěch SingleFile.** Kritérium
+(a) hlásilo nulu na systému skládajícím barvy z kanálů, protože sonda uměla
+poznat jen token natřený doslova jako barva. Kritérium (b) porovnávalo dva
+vzorky a připisovalo viewportu všechno, co se mezi nimi stalo — na stránce, která
+se ještě dorenderovávala, tedy skoro všechno: u MUI hlásilo 265 reagujících
+prvků tam, kde je jich poctivě sedm, a kopie proto vypadala na dvě procenta
+místo osmdesáti šesti. Měří se teď tam a zpět a počítá se jen to, co se změnilo
+a zase vrátilo.
 
 ## Rozhodnutí
 
@@ -64,7 +72,9 @@ požadavků, nula změn DOM.
 
 **Kritérium (c) neprošlo na GitHubu — 78,5 % proti nulovému šumu.** Chybí výpis
 souborů, který se vykresluje Reactem. Markup je v souboru přítomný, ale ne jako
-živé prvky.
+živé prvky. Na MUI, kde je klientského renderování také dost, vyšlo 97,2 % — ta
+ztráta tedy není vlastností klientsky renderovaných aplikací obecně, ale něčeho
+konkrétního na tom, jak GitHub svůj výpis staví.
 
 **Kritéria (c) a (d) jdou proti sobě.** `--block-scripts` má výchozí hodnotu
 `true`, tedy SingleFile blokuje skripty **už při zachycení** — proto se klientský

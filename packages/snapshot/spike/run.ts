@@ -223,14 +223,16 @@ async function measure(
 
   const survivingProperties = copyProperties.filter((name) => originalProperties.includes(name));
   const repainting = overrides.filter((entry) => entry.affected > 0);
-  // Judged on the two things that survive a difference in element count: the
-  // media query itself flipping, and the layout showing or hiding something
-  // because of it.
-  const copyHides = copyViewport.hiddenNarrow !== copyViewport.hiddenWide;
+  // Judged on how much of the original's responsiveness the copy keeps, not on
+  // a boolean. matchMedia flipping only says the breakpoint text survived, and
+  // a hidden-count that moves says almost nothing without a floor to read it
+  // against — the same "ano" hiding a number that criterion (a) used to have.
+  const viewportRetention =
+    originalViewport.changedElements === 0
+      ? 1
+      : copyViewport.changedElements / originalViewport.changedElements;
   const viewportAlive =
-    copyViewport.narrowMatches &&
-    !copyViewport.wideMatches &&
-    (copyHides || copyViewport.changedElements > 0);
+    copyViewport.narrowMatches && !copyViewport.wideMatches && viewportRetention >= 0.5;
   const originalViewportAlive = originalViewport.changedElements > 0;
   const selectorRate = selectors.matched / Math.max(1, originalSelectors.length);
   const outlineMatches = longestCommonRun(originalOutline, copyOutline);
@@ -260,7 +262,7 @@ async function measure(
         "(b) media queries reagují",
         viewportAlive || !originalViewportAlive,
         originalViewportAlive
-          ? `matchMedia přepne, skrytých prvků ${copyViewport.hiddenWide}→${copyViewport.hiddenNarrow} (originál ${originalViewport.hiddenWide}→${originalViewport.hiddenNarrow}), otisk se hne u ${copyViewport.changedElements} prvků`
+          ? `${copyViewport.changedElements} z ${originalViewport.changedElements} reagujících prvků (${(viewportRetention * 100).toFixed(0)} %), skrytých ${copyViewport.hiddenWide}→${copyViewport.hiddenNarrow}`
           : "originál sám na šířku nereaguje — nelze rozhodnout",
       ),
       verdictLine(

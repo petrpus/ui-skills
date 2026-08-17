@@ -173,6 +173,13 @@ export interface ViewportSample {
  * Criterion (b). Media queries are only alive if the layout actually answers to
  * the viewport, so this compares computed styles at two widths rather than
  * trusting `matchMedia` alone.
+ *
+ * Measured wide → narrow → wide, counting only elements that changed one way
+ * and changed back. Comparing two samples alone credits the viewport with
+ * everything that happened between them, and on a page still settling that is
+ * most of it: this probe once reported 265 elements responding on a page where
+ * the honest number was ten, which made the snapshot look like it had lost
+ * almost all of its responsiveness when it had lost about a third.
  */
 export async function respondsToViewport(page: Page, query: string): Promise<ViewportSample> {
   const sampleAt = async (width: number) => {
@@ -192,7 +199,10 @@ export async function respondsToViewport(page: Page, query: string): Promise<Vie
 
   const wide = await sampleAt(1280);
   const narrow = await sampleAt(400);
-  const changed = wide.styles.filter((value, index) => value !== narrow.styles[index]).length;
+  const wideAgain = await sampleAt(1280);
+  const changed = wide.styles.filter(
+    (value, index) => value !== narrow.styles[index] && value === wideAgain.styles[index],
+  ).length;
 
   return {
     wideMatches: wide.matches,
