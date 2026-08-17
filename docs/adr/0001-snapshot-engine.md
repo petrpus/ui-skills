@@ -38,7 +38,7 @@ rovnocenný. Proto je stav *přijato předběžně*: viz „Co by rozhodnutí ob
 | (a) custom properties přežily | 5 z 5 | 2035 z 2230 | 776 ze 777 |
 | (a) a jsou přepsatelné | **5 z 5** | **4 z 12** | **3 z 12** |
 | (b) media queries reagují | ano, 8→8 skrytých | ano, 154→208 skrytých | ano, 55→60 skrytých |
-| (c) obsahová kostra sedí | 100 % (šum 0 %) | **77,7 %** (šum 0 %) | 67,7 % (šum 29,6 %) |
+| (c) obsahová kostra sedí | 100 % (šum 0 %) | **78,5 %** (šum 0 %) | 67,7 % (šum 29,6 %) |
 | (d) kopie je netečná | 0 / 0 / 0 | 0 / 0 / 0 | 0 / 0 / 0 |
 
 Velikost a čas: 3 kB / 4,1 s · 1027 kB / 11,4 s · 1292 kB / 7,8 s.
@@ -47,7 +47,7 @@ U (a) se zapisuje zlomek, ne „ano" — polovina hodnoty tohohle čísla je v t
 jak je těsné. U (c) je vedle výsledku šum, tedy jak moc se stránka liší sama od
 sebe mezi dvěma načteními; bez něj to číslo nejde číst. U MUI je šum 29,6 %,
 takže 67,7 % znamená „ne horší než sama stránka", u GitHubu je šum nulový a
-77,7 % je skutečná ztráta.
+78,5 % je skutečná ztráta.
 
 ## Rozhodnutí
 
@@ -62,7 +62,7 @@ požadavků, nula změn DOM.
 
 ## Co měření také ukázalo
 
-**Kritérium (c) neprošlo na GitHubu — 77,7 % proti nulovému šumu.** Chybí výpis
+**Kritérium (c) neprošlo na GitHubu — 78,5 % proti nulovému šumu.** Chybí výpis
 souborů, který se vykresluje Reactem. Markup je v souboru přítomný, ale ne jako
 živé prvky.
 
