@@ -16,11 +16,15 @@
     "test": "vitest run",
     "verify": "node scripts/verify.mjs",
     "design-demo": "tsx packages/demo-generator/src/cli.ts",
-    "spike:snapshot": "tsx packages/snapshot/spike/run.ts"
+    "spike:snapshot": "tsx packages/snapshot/spike/run.ts",
+    "canvas-snapshot": "tsx packages/snapshot/src/cli.ts",
+    "test:capture": "vitest run --config vitest.browser.config.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.8",
+    "@types/jsdom": "^30.0.0",
     "@types/node": "^26.2.0",
+    "jsdom": "^30.0.1",
     "playwright": "^1.62.1",
     "single-file-cli": "^2.0.83",
     "tsx": "^4.23.12",

@@ -1,8 +1,9 @@
-/**
- * Snapshot capture and instrumentation.
- *
- * Empty until the spike in `spike/` decides whether SingleFile can carry the
- * weight the rest of the project puts on it. Nothing should be built here
- * before that verdict exists.
- */
-export const SNAPSHOT_PACKAGE_PLACEHOLDER = true;
+export { type CaptureResult, capture } from "./capture.ts";
+export { instrument } from "./instrument.ts";
+export { sanitize } from "./sanitize.ts";
+export {
+  CX_ID_ATTRIBUTE,
+  type ElementLocation,
+  type Instrumented,
+  type LocationMap,
+} from "./types.ts";
