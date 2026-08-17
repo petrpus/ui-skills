@@ -139,6 +139,29 @@ přes `document.styleSheets` jediné media rule, přestože jich snapshot obsahu
 142. Cokoli, co bude chtít fáze 2 vytěžit ze stránky, musí počítat s tím, že
 z živé stránky je čitelná jen část — ze snapshotu, který je same-origin, všechno.
 
+**Kopie není úplně bez skriptu — jen to tak po načtení vypadá.** Doplněno při
+stavbě #30: soubor obsahuje jeden vlastní skript serializátoru
+(`data-template-shadow-root`), který připojí deklarativní shadow rooty a pak se
+sám odstraní. Měření kritéria (d) počítalo skripty v načtené stránce, a proto
+hlásilo nulu — správně pro to, co běží dál, ale ne pro to, co se spustí. Prohlížeč
+si deklarativní shadow rooty připojí i bez něj (ověřeno), takže ho zachycení
+zahazuje.
+
+Zahodit skripty přitom nestačí. Při review #30 se ukázalo, že zachycená stránka
+si může přinést vlastní spouštěcí cesty, které žádný `<script>` nemají: rám
+vložený jako `srcdoc` spustí skript uvnitř sebe hned po načtení a dosáhne na
+stránku, která ho drží, a `javascript:` v odkazu nebo `data:text/html` v rámu
+udělají totéž. Zachycení proto rámy zavírá do prázdného `sandbox` (obsah
+zůstane, spouštění ne) a spustitelná URL zahazuje.
+
+**Zavřený shadow root se nezachytí vůbec.** Zjištěno při #30. Serializátor čte
+obsah přes `host.shadowRoot`, což u režimu `closed` vrací null komukoli zvenčí —
+takže obsah v kopii prostě není, a nic to neřekne. Platí to i pro ručně psaný
+`<template shadowrootmode="closed">`, protože prohlížeč ho při parsování uzavře
+dřív, než se k němu serializátor dostane. Stránka používající zavřené rooty se
+tedy reviduje s chybějícími kusy. Není to ztráta identifikátorů, ale ztráta
+obsahu, a je to horší, protože není vidět.
+
 **HTML se minifikuje** a shadow DOM se serializuje deklarativně. Porovnávání
 proto musí normalizovat bílé místo a procházet i shadow rooty.
 
