@@ -47,6 +47,19 @@
 
   <div id="host"></div>
 
+  <!-- Inline SVG, including a camelCase name and a foreign-namespace subtree:
+       xpath resolves differently here, and without this the regression test
+       cannot see whether it resolves at all. -->
+  <svg id="znak" width="80" height="40" viewBox="0 0 80 40" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="prechod"><stop offset="0" stop-color="#2563eb"/></linearGradient>
+    </defs>
+    <rect x="0" y="0" width="80" height="40" fill="url(#prechod)"/>
+    <foreignObject x="8" y="8" width="64" height="24">
+      <p xmlns="http://www.w3.org/1999/xhtml">HTML uvnitř SVG</p>
+    </foreignObject>
+  </svg>
+
   <p id="written-by-script">Tenhle text má přepsat skript.</p>
 </div>
 

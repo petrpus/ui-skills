@@ -92,6 +92,24 @@ function selectorFor(element: Element): string {
   return steps.join(" > ");
 }
 
+const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
+
+/**
+ * One step of an xpath, written so a browser can actually resolve it.
+ *
+ * `document.evaluate` with no namespace resolver matches an unprefixed name
+ * only against elements in no namespace. Browsers special-case HTML into that;
+ * SVG and MathML never qualify, whatever their case — so `svg[1]` selects
+ * nothing, and so does every step below it. Foreign elements are therefore
+ * matched on their local name instead, which ignores the namespace entirely.
+ */
+function xpathStep(element: Element, index: number): string {
+  const isHtml = element.namespaceURI === null || element.namespaceURI === HTML_NAMESPACE;
+  return isHtml
+    ? `${element.localName}[${index}]`
+    : `*[local-name()='${element.localName}'][${index}]`;
+}
+
 function xpathFor(element: Element): string {
   const steps: string[] = [];
   let current: Element | null = element;
@@ -104,11 +122,7 @@ function xpathFor(element: Element): string {
       holder === null
         ? [step]
         : elementChildren(holder).filter((sibling) => sibling.localName === step.localName);
-    // `localName`, not a lowercased tag name. XPath name tests are
-    // case-sensitive for foreign elements, so `foreignobject` selects nothing
-    // where `foreignObject` selects the element — and SVG exports are full of
-    // camelCase names like linearGradient and clipPath.
-    steps.unshift(`${step.localName}[${sameName.indexOf(step) + 1}]`);
+    steps.unshift(xpathStep(step, sameName.indexOf(step) + 1));
     current = parent;
   }
 

@@ -13,12 +13,24 @@ const URL_ATTRIBUTES = ["href", "src", "action", "formaction", "xlink:href", "da
  */
 const EXECUTABLE_SCHEME = /^\s*(javascript|vbscript|data:text\/html)/i;
 
+/**
+ * The value as the browser will read it, not as it was written.
+ *
+ * A URL parser removes every ASCII tab, newline and carriage return before it
+ * looks at the scheme, so `java\nscript:` is `javascript:` by the time anything
+ * is decided — and a filter that only trimmed the ends let it straight through
+ * to a link that fired when clicked.
+ */
+function asBrowserReads(value: string): string {
+  return value.replace(/[\t\n\r]/g, "");
+}
+
 function neutraliseUrls(element: Element): number {
   let removed = 0;
 
   for (const name of URL_ATTRIBUTES) {
     const value = element.getAttribute(name);
-    if (value !== null && EXECUTABLE_SCHEME.test(value)) {
+    if (value !== null && EXECUTABLE_SCHEME.test(asBrowserReads(value))) {
       element.removeAttribute(name);
       removed += 1;
     }

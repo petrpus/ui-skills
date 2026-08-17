@@ -134,3 +134,29 @@ describe("things that run without a script tag", () => {
     expect(removed).toBe(1);
   });
 });
+
+describe("a scheme written so the filter will not recognise it", () => {
+  it.each([
+    ["newline", "java\nscript:steal()"],
+    ["tab", "java\tscript:steal()"],
+    ["carriage return", "java\rscript:steal()"],
+    ["several", "j\ta\nv\ra script:steal()".replace(" ", "")],
+  ])("drops a href split by a %s, which the browser reassembles", (_label, href) => {
+    // A URL parser removes tabs and newlines from anywhere before reading the
+    // scheme, so these are all `javascript:` by the time it matters. A filter
+    // that only trimmed the ends passed them through to a link that fired.
+    const { html, removed } = sanitize(`<html><body><a href="${href}">odkaz</a></body></html>`);
+
+    expect(removed).toBe(1);
+    expect(html).not.toMatch(/script:/i);
+  });
+
+  it("leaves a genuine URL that merely contains the word javascript", () => {
+    const { html, removed } = sanitize(
+      '<html><body><a href="/clanky/javascript-pro-zacatecniky">článek</a></body></html>',
+    );
+
+    expect(removed).toBe(0);
+    expect(html).toContain("/clanky/javascript-pro-zacatecniky");
+  });
+});

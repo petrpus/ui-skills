@@ -62,7 +62,24 @@ describe("capture", () => {
     );
   });
 
-  it("does not read back a file left over from an earlier run", () => {
+  it("refuses a snapshot older than the run that supposedly made it", () => {
+    // The guard this covers only matters when a file *is* written — so the
+    // stand-in writes one and backdates it. Without that, the earlier
+    // "wrote nothing" check catches the case first and this branch never runs;
+    // deleting it left every test passing.
+    const tool = fakeSingleFile(`
+      const { writeFileSync, utimesSync } = require("node:fs");
+      writeFileSync(process.argv[3], "<html><body><p>starý</p></body></html>");
+      const long_ago = new Date("2020-01-01T00:00:00Z");
+      utimesSync(process.argv[3], long_ago, long_ago);
+    `);
+
+    expect(() => capture("page.html", join(dir, "work"), { singleFileBinary: tool })).toThrow(
+      /starší než tenhle běh/,
+    );
+  });
+
+  it("clears the session directory, so nothing from before can be read back", () => {
     // The real tool never overwrites: it writes `snapshot (1).html` beside an
     // existing file and exits 0, so a stale snapshot would be measured as this
     // run's work. The work directory is cleared first, so a tool that writes
