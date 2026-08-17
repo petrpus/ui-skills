@@ -178,10 +178,25 @@ export interface ViewportSample {
  * and changed back. Comparing two samples alone credits the viewport with
  * everything that happened between them, and on a page still settling that is
  * most of it: this probe once reported 265 elements responding on a page where
- * the honest number was ten, which made the snapshot look like it had lost
- * almost all of its responsiveness when it had lost about a third.
+ * the honest number was ten.
+ *
+ * That was not enough on its own. A widget still settling can finish between
+ * the second and third sample and land back on its old value by coincidence,
+ * which reads as a response; whether it does depends on how much wall clock
+ * passes between samples, so the verdict moved with system load — the same
+ * page and snapshot gave 2 % or 86 % depending on whether the script was
+ * launched through a wrapper process. A measurement that answers to the
+ * launcher is not a measurement.
+ *
+ * So: wait for the page to stop moving before the first sample, run the cycle
+ * several times, and take the median. Any single cycle can be unlucky; three
+ * agreeing ones are hard to fake.
  */
-export async function respondsToViewport(page: Page, query: string): Promise<ViewportSample> {
+export async function respondsToViewport(
+  page: Page,
+  query: string,
+  cycles = 3,
+): Promise<ViewportSample> {
   const sampleAt = async (width: number) => {
     await page.setViewportSize({ width, height: 900 });
     return page.evaluate((mediaQuery) => {
@@ -197,12 +212,29 @@ export async function respondsToViewport(page: Page, query: string): Promise<Vie
     }, query);
   };
 
-  const wide = await sampleAt(1280);
-  const narrow = await sampleAt(400);
-  const wideAgain = await sampleAt(1280);
-  const changed = wide.styles.filter(
-    (value, index) => value !== narrow.styles[index] && value === wideAgain.styles[index],
-  ).length;
+  // Let whatever is still rendering finish before the first sample, or its
+  // settling gets measured as responsiveness.
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.waitForTimeout(1500);
+
+  const counts: number[] = [];
+  let wide = await sampleAt(1280);
+  let narrow = await sampleAt(400);
+
+  for (let cycle = 0; cycle < cycles; cycle += 1) {
+    const wideAgain = await sampleAt(1280);
+    counts.push(
+      wide.styles.filter(
+        (value, index) => value !== narrow.styles[index] && value === wideAgain.styles[index],
+      ).length,
+    );
+    if (cycle + 1 < cycles) {
+      wide = wideAgain;
+      narrow = await sampleAt(400);
+    }
+  }
+
+  const changed = [...counts].sort((a, b) => a - b)[Math.floor(counts.length / 2)] ?? 0;
 
   return {
     wideMatches: wide.matches,

@@ -37,7 +37,7 @@ rovnocenný. Proto je stav *přijato předběžně*: viz „Co by rozhodnutí ob
 | --- | --- | --- | --- |
 | (a) custom properties přežily | 5 z 5 | 2035 z 2230 | 776 ze 777 |
 | (a) a jsou přepsatelné | **5 z 5** | **4 z 12** | **3 z 12** |
-| (b) media queries reagují | **2 ze 2** (100 %) | **75 ze 116** (65 %) | **6 ze 7** (86 %) |
+| (b) media queries reagují | **2 ze 2** (100 %) | **75 ze 104** (72 %) | **6 z 11** (55 %) |
 | (c) obsahová kostra sedí | 100 % (šum 0 %) | **78,5 %** (šum 0 %) | 97,2 % (šum 0 %) |
 | (d) kopie je netečná | 0 / 0 / 0 | 0 / 0 / 0 | 0 / 0 / 0 |
 
@@ -48,14 +48,25 @@ v tom, jak je těsné, a boolean by to schoval. U (c) je vedle výsledku šum, t
 jak moc se stránka liší sama od sebe mezi dvěma načteními; bez něj to číslo
 nejde číst.
 
-**Měřidlo samo bylo dvakrát vedle a obakrát v neprospěch SingleFile.** Kritérium
-(a) hlásilo nulu na systému skládajícím barvy z kanálů, protože sonda uměla
-poznat jen token natřený doslova jako barva. Kritérium (b) porovnávalo dva
-vzorky a připisovalo viewportu všechno, co se mezi nimi stalo — na stránce, která
-se ještě dorenderovávala, tedy skoro všechno: u MUI hlásilo 265 reagujících
-prvků tam, kde je jich poctivě sedm, a kopie proto vypadala na dvě procenta
-místo osmdesáti šesti. Měří se teď tam a zpět a počítá se jen to, co se změnilo
-a zase vrátilo.
+**Měřidlo samo bylo třikrát vedle, pokaždé v neprospěch SingleFile.** Stojí to
+tu proto, že spike má rozhodnout o týdnech práce, a špatné měřidlo je horší než
+žádné — vypadá totiž jako důkaz.
+
+Kritérium (a) hlásilo nulu na systému skládajícím barvy z kanálů, protože sonda
+uměla poznat jen token natřený doslova jako barva; neviděla by ani spacing nebo
+stín. Teď otiskne styl všech prvků a počítá, co se pohnulo.
+
+Kritérium (b) bylo vedle dvakrát. Nejdřív porovnávalo dva vzorky a připisovalo
+viewportu všechno, co se mezi nimi stalo — na stránce, která se ještě
+dorenderovávala, tedy skoro všechno. Měření tam a zpět to nespravilo: výsledek
+pak závisel na tom, kolik času mezi vzorky uplynulo, takže **tentýž snapshot
+téže stránky dával 2 % nebo 86 % podle toho, jak se skript spustil**. Měření,
+které odpovídá na způsob spuštění, není měření.
+
+Skutečná příčina byla v tom, co se s čím porovnává: živá aplikace reaguje na
+šířku okna i JavaScriptem, kopie umí jen CSS. Originál se proto měří **s vypnutým
+JavaScriptem**, tedy stejnými prostředky, jaké má kopie. Od té chvíle dává
+opakované měření totéž (55 %, 55 %, 55 %, 50 % napříč běhy i způsoby spuštění).
 
 ## Rozhodnutí
 
@@ -132,6 +143,9 @@ proto musí normalizovat bílé místo a procházet i shadow rooty.
 
 - **Měření na Cronosu**, které by u (a) nebo (b) dopadlo jinak. Dokud
   neproběhne, je tenhle verdikt podložený dvěma náhradními cíli.
+- **Měření na jiných aplikacích**, kde by (b) kleslo pod polovinu. Hodnoty
+  kolem 55–72 % znamenají, že část responzivity živé stránky kopie neunese;
+  kdyby jich byla většina, přestal by být viewport přepínač (fáze 2) k něčemu.
 - **Nemožnost zachytit klientsky renderovaný obsah** ani přes `--browser-server`.
   Znamenalo by to, že nástroj nefunguje na většině moderních aplikací, a otázka
   vlastního enginu se otevírá znovu.

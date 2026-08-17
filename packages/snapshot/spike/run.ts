@@ -183,7 +183,18 @@ async function measure(
   await original.goto(targetUrl, { waitUntil: "networkidle" });
   const originalProperties = await declaredCustomProperties(original);
   const originalSelectors = await sampleSelectors(original, SAMPLE_SIZE);
-  const originalViewport = await respondsToViewport(original, NARROW_QUERY);
+  // Criterion (b) asks what media queries do, and a snapshot can only ever
+  // carry CSS. A hydrated app also answers the viewport in JavaScript — MUI
+  // re-renders components on resize — so comparing the copy against a live page
+  // with scripts running compares CSS against CSS-plus-JavaScript and calls the
+  // difference a loss. It also never settles: repeated runs of the same page
+  // swung between 7 and 265 responding elements. Measured with scripts off, the
+  // original answers with the same means the copy has.
+  const scriptless = await browser.newContext({ javaScriptEnabled: false });
+  const bare = await scriptless.newPage();
+  await bare.goto(targetUrl, { waitUntil: "load" });
+  const originalViewport = await respondsToViewport(bare, NARROW_QUERY);
+  await scriptless.close();
   const originalOutline = await contentOutline(original);
   await original.close();
 
