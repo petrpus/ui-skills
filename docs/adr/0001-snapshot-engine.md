@@ -68,6 +68,19 @@ Skutečná příčina byla v tom, co se s čím porovnává: živá aplikace rea
 JavaScriptem**, tedy stejnými prostředky, jaké má kopie. Od té chvíle dává
 opakované měření totéž (55 %, 55 %, 55 %, 50 % napříč běhy i způsoby spuštění).
 
+**Kolik responzivity snapshot unese v principu.** Kritérium (b) porovnává kopii
+s originálem bez JavaScriptu, protože to je jediné férové srovnání: statický
+soubor umí odpovědět na změnu šířky jen přes CSS. Živý prohlížeč ale odpovídá
+i JavaScriptem, a u MUI je ta část tak velká a tak nepředvídatelně načasovaná,
+že se nedala ani spolehlivě spočítat — **dvě po sobě jdoucí načtení téže stránky
+dala 9 a 265 reagujících prvků**.
+
+Pro fázi 2 to znamená: viewport přepínač ukáže responzivitu, kterou nese CSS, a
+neukáže tu, kterou aplikace řeší překreslením v JavaScriptu. **To je vlastnost
+review nad zmrazenou replikou, ne nedostatek SingleFile** — žádný serializátor
+živý JavaScript neunese. Kdo bude přepínač stavět, měl by to říct nahlas
+v rozhraní, ne to nechat uživatele objevit na vlastní kůži.
+
 ## Rozhodnutí
 
 **Pokračuje se se SingleFile.** Kritéria (a) a (b) prošla na všech třech cílech,
@@ -143,6 +156,8 @@ proto musí normalizovat bílé místo a procházet i shadow rooty.
 
 - **Měření na Cronosu**, které by u (a) nebo (b) dopadlo jinak. Dokud
   neproběhne, je tenhle verdikt podložený dvěma náhradními cíli.
+- **Zpřesnění šumu u (c)** (issue #29): dnes stojí na jediném opakovaném
+  načtení a u MUI se mezi běhy pohyboval mezi 0 % a 29,6 %.
 - **Měření na jiných aplikacích**, kde by (b) kleslo pod polovinu. Hodnoty
   kolem 55–72 % znamenají, že část responzivity živé stránky kopie neunese;
   kdyby jich byla většina, přestal by být viewport přepínač (fáze 2) k něčemu.
