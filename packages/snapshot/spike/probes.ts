@@ -10,6 +10,34 @@ import type { Page } from "playwright";
 
 const SENTINEL = "rgb(1, 2, 3)";
 
+/**
+ * Enough of the computed style to notice a token doing anything at all.
+ *
+ * An earlier version compared only `color` and `backgroundColor` against the
+ * sentinel by string equality, which asked "did this token paint this exact
+ * colour" instead of "did this token change anything". It reported zero live
+ * tokens on a design system that composes colours from channels
+ * (`rgb(var(--x-channel) / 40%)`) — on the live page, not even a snapshot — and
+ * it could never see a spacing, radius or shadow token at all.
+ */
+const FINGERPRINT = [
+  "color",
+  "backgroundColor",
+  "borderColor",
+  "borderRadius",
+  "boxShadow",
+  "padding",
+  "margin",
+  "gap",
+  "fontSize",
+  "fontWeight",
+  "lineHeight",
+  "fill",
+  "stroke",
+  "width",
+  "height",
+] as const;
+
 /** Every custom property declared by a stylesheet the page will let us read. */
 export async function declaredCustomProperties(page: Page): Promise<string[]> {
   return page.evaluate(() => {
@@ -49,31 +77,37 @@ export interface OverrideResult {
 
 /**
  * Criterion (a). A property being present says nothing; what matters is whether
- * reassigning it repaints anything, which is what a CSS panel would need.
+ * reassigning it changes what the page renders, which is what a CSS panel needs.
  *
- * Works by setting the property to a colour no design uses and counting the
- * elements whose computed colour or background becomes it.
+ * Measures by fingerprinting every element's computed style, reassigning the
+ * property, and counting how many fingerprints moved. Deliberately indifferent
+ * to *what* changed: a token feeding a shadow, a gap or a colour channel counts
+ * the same as one feeding a plain colour, and a value the browser then rejects
+ * counts too — the point is only that the property is wired to something.
  */
 export async function overridableProperties(
   page: Page,
   properties: readonly string[],
 ): Promise<OverrideResult[]> {
   return page.evaluate(
-    ([names, sentinel]) => {
+    ([names, sentinel, fingerprint]) => {
+      const properties = fingerprint as unknown as string[];
+      const snapshot = (): string[] =>
+        Array.from(document.querySelectorAll("*")).map((element) => {
+          const style = getComputedStyle(element) as unknown as Record<string, string>;
+          return properties.map((name) => style[name] ?? "").join("|");
+        });
+
       const results: { property: string; affected: number }[] = [];
       const root = document.documentElement;
+      const before = snapshot();
 
       for (const property of names as string[]) {
         const previous = root.style.getPropertyValue(property);
         root.style.setProperty(property, sentinel as string);
 
-        let affected = 0;
-        for (const element of Array.from(document.querySelectorAll("*"))) {
-          const style = getComputedStyle(element);
-          if (style.color === sentinel || style.backgroundColor === sentinel) {
-            affected += 1;
-          }
-        }
+        const after = snapshot();
+        const affected = before.filter((value, index) => value !== after[index]).length;
 
         if (previous === "") {
           root.style.removeProperty(property);
@@ -84,14 +118,55 @@ export async function overridableProperties(
       }
       return results;
     },
-    [properties, SENTINEL] as const,
+    [properties, SENTINEL, FINGERPRINT] as const,
   );
+}
+
+/**
+ * The custom properties the page actually reads somewhere, as opposed to merely
+ * declaring.
+ *
+ * Sampling the first dozen declared properties made the criterion's outcome
+ * depend on the order a stylesheet happens to be written in: on one design
+ * system the first twelve were all shadows and spacing, none of which the old
+ * probe could see, and the criterion failed for a reason that had nothing to do
+ * with the snapshot.
+ */
+export async function referencedCustomProperties(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const names = new Set<string>();
+    const pattern = /var\(\s*(--[a-zA-Z0-9_-]+)/g;
+
+    for (const sheet of Array.from(document.styleSheets)) {
+      try {
+        for (const rule of Array.from(sheet.cssRules)) {
+          for (const match of Array.from(rule.cssText.matchAll(pattern))) {
+            const name = match[1];
+            if (name !== undefined) {
+              names.add(name);
+            }
+          }
+        }
+      } catch {
+        // Cross-origin stylesheet; nothing to read from here.
+      }
+    }
+    return [...names];
+  });
 }
 
 export interface ViewportSample {
   readonly narrowMatches: boolean;
   readonly wideMatches: boolean;
   readonly changedElements: number;
+  /**
+   * How many elements are hidden at each width. Counting elements whose whole
+   * style fingerprint moved compares badly across a copy that has fewer
+   * elements than the original; a count of what is displayed does not, and
+   * showing and hiding is what a responsive layout mostly does.
+   */
+  readonly hiddenWide: number;
+  readonly hiddenNarrow: number;
 }
 
 /**
@@ -102,16 +177,17 @@ export interface ViewportSample {
 export async function respondsToViewport(page: Page, query: string): Promise<ViewportSample> {
   const sampleAt = async (width: number) => {
     await page.setViewportSize({ width, height: 900 });
-    return page.evaluate(
-      (mediaQuery) => ({
+    return page.evaluate((mediaQuery) => {
+      const elements = Array.from(document.querySelectorAll("*"));
+      return {
         matches: window.matchMedia(mediaQuery).matches,
-        styles: Array.from(document.querySelectorAll("*")).map((element) => {
+        hidden: elements.filter((element) => getComputedStyle(element).display === "none").length,
+        styles: elements.map((element) => {
           const style = getComputedStyle(element);
           return `${style.gridTemplateColumns}|${style.backgroundColor}|${style.display}`;
         }),
-      }),
-      query,
-    );
+      };
+    }, query);
   };
 
   const wide = await sampleAt(1280);
@@ -122,6 +198,8 @@ export async function respondsToViewport(page: Page, query: string): Promise<Vie
     wideMatches: wide.matches,
     narrowMatches: narrow.matches,
     changedElements: changed,
+    hiddenWide: wide.hidden,
+    hiddenNarrow: narrow.hidden,
   };
 }
 

@@ -1,6 +1,6 @@
 # ADR-0001: Snapshot engine
 
-**Stav:** přijato · **Datum:** 17. 8. 2026 · **Rozhoduje:** issue #2
+**Stav:** přijato předběžně · **Datum:** 17. 8. 2026 · **Rozhoduje:** issue #2
 
 ## Kontext
 
@@ -16,62 +16,79 @@ práce, a spec §4 proto žádá, aby se rozhodlo experimentem, ne odhadem.
 Měření je v `packages/snapshot/spike/`, spustitelné přes
 `pnpm spike:snapshot <url|soubor>`. Reprodukovatelné na jiné stránce a jiný den.
 
+## Na čem se měřilo — a na čem ne
+
+| Cíl | Proč |
+| --- | --- |
+| `packages/snapshot/fixtures/control.html` | vlastní vzorek se známými odpověďmi: custom properties, media queries, shadow DOM, běhově vložený styl, skript přepisující text |
+| github.com (stránka repozitáře) | vlastní design systém (Primer), klientsky renderovaný výpis souborů |
+| mui.com (dokumentace) | jiný design systém, barvy skládané z kanálů, Emotion |
+
+**Cronos, tedy cíl, který spec jmenuje, změřený nebyl.** Spec ho volí záměrně:
+je to netriviální aplikace za přihlášením a „snapshot statické marketingové
+stránky by prošel a nic by neověřil". Přihlášení se podle issue #2 mělo vyřešit
+ručně; k té aplikaci ale nemá přístup ten, kdo spike prováděl. Nahrazen byl
+dvěma veřejnými aplikacemi srovnatelné složitosti — což je **slabší důkaz**, ne
+rovnocenný. Proto je stav *přijato předběžně*: viz „Co by rozhodnutí obrátilo".
+
 ## Měření
 
-Dva cíle: vlastní kontrolní vzorek se známými odpověďmi
-(`packages/snapshot/fixtures/control.html`) a veřejná stránka GitHubu, tedy
-netriviální aplikace s vlastním design systémem (Primer) a klientským
-renderováním.
+| Kritérium | Kontrolní vzorek | GitHub | MUI |
+| --- | --- | --- | --- |
+| (a) custom properties přežily | 5 z 5 | 2035 z 2230 | 776 ze 777 |
+| (a) a jsou přepsatelné | **5 z 5** | **4 z 12** | **3 z 12** |
+| (b) media queries reagují | ano, 8→8 skrytých | ano, 154→208 skrytých | ano, 55→60 skrytých |
+| (c) obsahová kostra sedí | 100 % (šum 0 %) | **77,7 %** (šum 0 %) | 67,7 % (šum 29,6 %) |
+| (d) kopie je netečná | 0 / 0 / 0 | 0 / 0 / 0 | 0 / 0 / 0 |
 
-| Kritérium | Kontrolní vzorek | GitHub |
-| --- | --- | --- |
-| (a) custom properties přežily | 4 ze 4 | **2035 z 2230** |
-| (a) a jsou přepsatelné | ano | ano |
-| (b) media queries reagují | 2 prvky | **75 prvků** mezi 1280 a 400 px |
-| (c) obsahová kostra sedí | 100 % | **78,5 %** |
-| (d) kopie je netečná | 0 skriptů, 0 požadavků, 0 změn DOM | totéž |
+Velikost a čas: 3 kB / 4,1 s · 1027 kB / 11,4 s · 1292 kB / 7,8 s.
 
-Velikost a čas: 2 kB / 4,1 s pro kontrolní vzorek, 1 MB / 9,7 s pro GitHub.
+U (a) se zapisuje zlomek, ne „ano" — polovina hodnoty tohohle čísla je v tom,
+jak je těsné. U (c) je vedle výsledku šum, tedy jak moc se stránka liší sama od
+sebe mezi dvěma načteními; bez něj to číslo nejde číst. U MUI je šum 29,6 %,
+takže 67,7 % znamená „ne horší než sama stránka", u GitHubu je šum nulový a
+77,7 % je skutečná ztráta.
 
 ## Rozhodnutí
 
-**Pokračuje se se SingleFile.** Kritéria (a) a (b) prošla, což je podle
-rozhodovacího pravidla v issue #2 podmínka pro to nezahajovat vlastní engine.
+**Pokračuje se se SingleFile.** Kritéria (a) a (b) prošla na všech třech cílech,
+což je podle rozhodovacího pravidla v issue #2 podmínka pro to nezahajovat
+vlastní engine.
 
 Custom properties nepřežijí jen jako text — přepsání jedné z nich ve snapshotu
-skutečně překreslí prvky, které ji používají. Media queries reagují na změnu
-šířky okna. Kopie neběží: nula skriptů, nula síťových požadavků, nula změn DOM.
+skutečně změní, co se vykreslí. Media query se v kopii přepne a layout na to
+reaguje skrýváním a odkrýváním prvků. Kopie neběží: nula skriptů, nula síťových
+požadavků, nula změn DOM.
 
 ## Co měření také ukázalo
 
-Tohle je užitečnější než samotný verdikt, protože to jsou věci, na které by se
-jinak narazilo až uprostřed fáze 0.
-
-**Kritérium (c) neprošlo na klientsky renderované aplikaci — 78,5 %.** Číslo je
-smysluplné jen proti šumu, a ten je nulový: **stránka se sama se sebou shodne na
-100 %**, takže rozdíl nejde na vrub tomu, že se aplikace mezi dvěma načteními
-mění. Chybí konkrétně výpis souborů, který GitHub vykresluje Reactem
-(`react-directory-*`), a ikony v něm. Markup je v souboru přítomný, ale ne jako
+**Kritérium (c) neprošlo na GitHubu — 77,7 % proti nulovému šumu.** Chybí výpis
+souborů, který se vykresluje Reactem. Markup je v souboru přítomný, ale ne jako
 živé prvky.
 
 **Kritéria (c) a (d) jdou proti sobě.** `--block-scripts` má výchozí hodnotu
 `true`, tedy SingleFile blokuje skripty **už při zachycení** — proto se klientský
-obsah nevykreslí. Vypnutí toho příznaku ale vrátí 15 `<script>` elementů do
-výstupu, čímž padá netečnost kopie. Ani při vypnutých skriptech se navíc počet
-živých prvků nezměnil (1253 v obou případech), takže samotný příznak problém
-neřeší.
+obsah nevykreslí. Vypnutí toho příznaku vrátí 15 `<script>` elementů do výstupu,
+čímž padá netečnost, a počet živých prvků se stejně nezmění.
 
-**Cesta ven, kterou fáze 0 musí vyřešit:** nechat stránku načíst a ustálit
-prohlížeč, který řídíme my (Playwright), a teprve pak ji serializovat — SingleFile
-umí `--browser-server` a připojit se k běžícímu prohlížeči. Tím se odděluje
-„dostat stránku do stavu, který chci revidovat" od „uložit ji", což je stejně
-oddělení, které si vyžádá `--profile` režim ve fázi 3.
+**Nápad, jak z toho ven, není ověřený.** SingleFile má `--browser-server` pro
+připojení k běžícímu prohlížeči, což by dovolilo nechat stránku ustálit
+prohlížečem, který řídíme my, a teprve pak ji serializovat. CLI ale pořád
+vyžaduje URL a řídí si vlastní načtení; že jde připojit se k už hydratované
+záložce a navigaci přeskočit, **změřené není**. Fáze 0 to musí brát jako
+otevřené riziko, ne jako hotové řešení.
 
 **SingleFile potřebuje ukázat na prohlížeč se sítí.** Jeho vlastní prohlížeč
 v tomhle prostředí otevřel lokální soubory, ale na žádnou URL nedosáhl a hlásil
 jen `fetch failed`. S `--browser-executable-path` na chromium z Playwrightu
-funguje. Navíc pak obě strany renderují týmž prohlížečem, což porovnání stejně
+funguje — a obě strany pak renderují týmž prohlížečem, což porovnání stejně
 předpokládá.
+
+**Výstup se nikdy nepřepisuje.** Existující cílový soubor SingleFile nechá být
+a zapíše vedle něj `snapshot (1).html`, s návratovým kódem 0. Skript, který pak
+čte původní cestu, měří první zachycení, které kdy udělal — a to bez jediného
+varování. Spike proto cílový adresář před každým během maže a kontroluje, že
+zapsaný soubor je mladší než ten běh.
 
 **Selhání se tváří jako úspěch.** Při nezachycení skončí proces s kódem 0 a jen
 nic nezapíše; a neplatná hodnota `--browser-wait-until` se neodmítne, ale spadne
@@ -79,28 +96,34 @@ do řetězu opakování, kde se čeká na timeout — jeden překlep stál 68 s 
 na každý snapshot.
 
 **Instrumentace nesmí přenášet selektory z originálu.** Odstranění skriptů posune
-`nth-child` indexy, takže poziční selektory z originálu ve snapshotu neplatí
-(13/17 na kontrolním vzorku, 0/20 na GitHubu). Spec s tím počítá — instrumentace
-je vlastní krok **nad snapshotem** — ale je to past, na kterou by se dalo snadno
-šlápnout.
+`nth-child` indexy (13/17 na kontrolním vzorku, 0/20 na obou aplikacích). Spec
+s tím počítá — instrumentace je vlastní krok **nad snapshotem** — ale je to past,
+na kterou by se dalo snadno šlápnout.
 
-**HTML se minifikuje** a shadow DOM se serializuje deklarativně. Obojí znamená,
-že porovnávání musí normalizovat bílé místo a procházet i shadow rooty.
+**Cross-origin stylesheety nejdou přečíst přes CSSOM.** Na živé MUI vidí prohlížeč
+přes `document.styleSheets` jediné media rule, přestože jich snapshot obsahuje
+142. Cokoli, co bude chtít fáze 2 vytěžit ze stránky, musí počítat s tím, že
+z živé stránky je čitelná jen část — ze snapshotu, který je same-origin, všechno.
+
+**HTML se minifikuje** a shadow DOM se serializuje deklarativně. Porovnávání
+proto musí normalizovat bílé místo a procházet i shadow rooty.
 
 ## Důsledky
 
 - Fáze 0 může začít; vlastní snapshot engine se nepíše.
-- Fáze 0 musí vyřešit zachycení klientsky renderovaného obsahu. Dokud to není
-  hotové, je nástroj spolehlivý na serverem renderovaných stránkách a na
-  prezentacích, což je přesně to, co fáze 0 slibuje.
+- Fáze 0 musí vyřešit zachycení klientsky renderovaného obsahu a brát
+  `--browser-server` jako neověřenou hypotézu.
 - Instrumentace dostane redundantní identifikátory (xpath + textový otisk) ne
-  jako pojistku, ale jako nutnost — poziční selektory tu nefungují.
+  jako pojistku, ale jako nutnost.
 - `single-file-cli` zůstává vývojová závislost volaná jako proces. Nikdy se
   nelinkuje ani nepřebírá kód; repo zůstává MIT (viz CLAUDE.md).
 
 ## Co by rozhodnutí obrátilo
 
-Kdyby se ukázalo, že klientsky renderovaný obsah nejde zachytit ani přes
-`--browser-server`, znamenalo by to, že nástroj nefunguje na většině moderních
-aplikací — a otázka vlastního enginu se otevírá znovu. Toto ADR se pak nahrazuje,
-ne edituje.
+- **Měření na Cronosu**, které by u (a) nebo (b) dopadlo jinak. Dokud
+  neproběhne, je tenhle verdikt podložený dvěma náhradními cíli.
+- **Nemožnost zachytit klientsky renderovaný obsah** ani přes `--browser-server`.
+  Znamenalo by to, že nástroj nefunguje na většině moderních aplikací, a otázka
+  vlastního enginu se otevírá znovu.
+
+V obou případech se toto ADR nahrazuje, ne edituje.

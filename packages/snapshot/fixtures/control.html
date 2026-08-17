@@ -9,6 +9,11 @@
     --surface: #ffffff;
     --ink: #18181b;
     --gap: 16px;
+    /* Channel-based colour, the way several design systems now compose them.
+       A probe that only recognises a token painted verbatim as a colour cannot
+       see this one — which is exactly how one such probe reported a live system
+       as having no live tokens at all. */
+    --accent-channel: 220 38 38;
   }
 
   body { background: var(--surface); color: var(--ink); font-family: system-ui, sans-serif; margin: 0; }
@@ -17,6 +22,7 @@
   .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--gap); margin-top: var(--gap); }
   .card { border: 1px solid #e4e4e7; border-radius: 8px; padding: var(--gap); }
   .note { color: var(--brand); }
+  .channelled { color: rgb(var(--accent-channel) / 90%); }
 
   /* Whether these still respond after serialisation is criterion (b). */
   @media (max-width: 600px) {
@@ -30,6 +36,7 @@
   <header class="banner" id="banner">
     <h1>Kontrolní vzorek</h1>
     <p class="note" id="note">Tenhle odstavec bere barvu z custom property.</p>
+    <p class="channelled" id="channelled">Tenhle ji skládá z kanálů.</p>
   </header>
 
   <section class="cards" id="cards">

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { type Browser, chromium } from "playwright";
@@ -11,6 +11,7 @@ import {
   countScripts,
   declaredCustomProperties,
   overridableProperties,
+  referencedCustomProperties,
   respondsToViewport,
   sampleSelectors,
 } from "./probes.ts";
@@ -58,6 +59,14 @@ interface Capture {
 
 function capture(targetUrl: string, outPath: string): Capture {
   mkdirSync(dirname(outPath), { recursive: true });
+
+  // It never overwrites: an existing target makes it write `snapshot (1).html`
+  // beside it and exit 0. A script that then reads the original path measures
+  // the first capture it ever made, however many times it is re-run — which is
+  // how a fixture edited minutes earlier still produced the old numbers.
+  rmSync(dirname(outPath), { recursive: true, force: true });
+  mkdirSync(dirname(outPath), { recursive: true });
+
   const started = Date.now();
 
   // The locally installed binary, spawned — never imported. Fetching it per run
@@ -89,6 +98,11 @@ function capture(targetUrl: string, outPath: string): Capture {
   if (result.status !== 0 || !existsSync(outPath)) {
     const output = [result.stdout, result.stderr].filter(Boolean).join(" ").trim();
     throw new Error(`single-file nic nezachytil: ${output || "bez výstupu"}`);
+  }
+
+  const written = statSync(outPath);
+  if (written.mtimeMs < started) {
+    throw new Error(`${outPath} je starší než tenhle běh — měřilo by se něco jiného`);
   }
 
   return {
@@ -192,7 +206,14 @@ async function measure(
   await copy.goto(pathToFileURL(snapshotPath).href, { waitUntil: "load" });
 
   const copyProperties = await declaredCustomProperties(copy);
-  const overrides = await overridableProperties(copy, copyProperties.slice(0, 12));
+  // Sampled from the properties the page actually reads, not the first dozen it
+  // happens to declare — otherwise the criterion turns on stylesheet order.
+  const referenced = await referencedCustomProperties(copy);
+  const sample = referenced.filter((name) => copyProperties.includes(name)).slice(0, 12);
+  const overrides = await overridableProperties(
+    copy,
+    sample.length > 0 ? sample : copyProperties.slice(0, 12),
+  );
   const copyViewport = await respondsToViewport(copy, NARROW_QUERY);
   await copy.setViewportSize({ width: 1280, height: 900 });
   const selectors = await checkSelectors(copy, originalSelectors);
@@ -202,7 +223,14 @@ async function measure(
 
   const survivingProperties = copyProperties.filter((name) => originalProperties.includes(name));
   const repainting = overrides.filter((entry) => entry.affected > 0);
-  const viewportAlive = copyViewport.changedElements > 0 && copyViewport.narrowMatches;
+  // Judged on the two things that survive a difference in element count: the
+  // media query itself flipping, and the layout showing or hiding something
+  // because of it.
+  const copyHides = copyViewport.hiddenNarrow !== copyViewport.hiddenWide;
+  const viewportAlive =
+    copyViewport.narrowMatches &&
+    !copyViewport.wideMatches &&
+    (copyHides || copyViewport.changedElements > 0);
   const originalViewportAlive = originalViewport.changedElements > 0;
   const selectorRate = selectors.matched / Math.max(1, originalSelectors.length);
   const outlineMatches = longestCommonRun(originalOutline, copyOutline);
@@ -223,13 +251,16 @@ async function measure(
       verdictLine(
         "(a) a jsou přepsatelné",
         repainting.length > 0,
-        `${repainting.length} z ${overrides.length} zkoušených překreslí aspoň jeden prvek`,
+        `${repainting.length} z ${overrides.length} zkoušených něco změní` +
+          (repainting.length > 0
+            ? ` (nejvíc ${Math.max(...repainting.map((entry) => entry.affected))} prvků)`
+            : ""),
       ),
       verdictLine(
         "(b) media queries reagují",
         viewportAlive || !originalViewportAlive,
         originalViewportAlive
-          ? `${copyViewport.changedElements} prvků se změní mezi 1280 a 400 px (originál ${originalViewport.changedElements})`
+          ? `matchMedia přepne, skrytých prvků ${copyViewport.hiddenWide}→${copyViewport.hiddenNarrow} (originál ${originalViewport.hiddenWide}→${originalViewport.hiddenNarrow}), otisk se hne u ${copyViewport.changedElements} prvků`
           : "originál sám na šířku nereaguje — nelze rozhodnout",
       ),
       verdictLine(
