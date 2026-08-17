@@ -146,21 +146,19 @@ function shadowTemplates(root: Queryable): Element[] {
  * Opens a closed shadow root, so what it holds can be pointed at.
  *
  * A closed root answers `host.shadowRoot` with null to everyone outside it,
- * which is precisely the step by which an identifier is followed — so content
- * inside one would be given identifiers that could never resolve, exactly the
- * failure this whole scheme was rewritten to avoid. The serialiser preserves
- * the real mode, so a page using `attachShadow({ mode: "closed" })` for an
- * embedded widget would hit it.
+ * which is precisely the step by which an identifier is followed, so content
+ * inside one would carry identifiers that could never resolve.
  *
  * Nothing can observe the change. The mode governs script access and not
  * rendering, and this copy runs no script at all — the encapsulation would be
  * protecting a component that no longer exists from code that cannot run.
  *
- * Measured caveat: a capture never reaches this, because the serialiser cannot
- * read a closed root either — such content is missing from the snapshot rather
- * than present and unaddressable. This stands for HTML that arrives some other
- * way, and so that a serialiser which one day does capture them does not find
- * identifiers that cannot be followed.
+ * A capture never reaches this today, and that was worth measuring rather than
+ * assuming: the serialiser reads shadow content through the same null-returning
+ * property, so a closed root's content is missing from the snapshot instead of
+ * present and unaddressable. This stands for HTML arriving some other way, and
+ * so that a serialiser which one day can read closed roots — see #40 — does not
+ * hand back identifiers nobody can follow.
  */
 function openShadowRoot(template: Element): void {
   if (template.getAttribute("shadowrootmode") === "closed") {
