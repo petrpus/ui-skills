@@ -142,6 +142,32 @@ function shadowTemplates(root: Queryable): Element[] {
   );
 }
 
+/**
+ * Opens a closed shadow root, so what it holds can be pointed at.
+ *
+ * A closed root answers `host.shadowRoot` with null to everyone outside it,
+ * which is precisely the step by which an identifier is followed — so content
+ * inside one would be given identifiers that could never resolve, exactly the
+ * failure this whole scheme was rewritten to avoid. The serialiser preserves
+ * the real mode, so a page using `attachShadow({ mode: "closed" })` for an
+ * embedded widget would hit it.
+ *
+ * Nothing can observe the change. The mode governs script access and not
+ * rendering, and this copy runs no script at all — the encapsulation would be
+ * protecting a component that no longer exists from code that cannot run.
+ *
+ * Measured caveat: a capture never reaches this, because the serialiser cannot
+ * read a closed root either — such content is missing from the snapshot rather
+ * than present and unaddressable. This stands for HTML that arrives some other
+ * way, and so that a serialiser which one day does capture them does not find
+ * identifiers that cannot be followed.
+ */
+function openShadowRoot(template: Element): void {
+  if (template.getAttribute("shadowrootmode") === "closed") {
+    template.setAttribute("shadowrootmode", "open");
+  }
+}
+
 interface Walk {
   readonly element: Element;
   /** Hosts to open before this element's own selector applies, outermost first. */
@@ -156,6 +182,7 @@ function walk(root: Queryable, hostPath: readonly string[]): Walk[] {
   }
 
   for (const template of shadowTemplates(root)) {
+    openShadowRoot(template);
     const host = parentElement(template);
     if (host === null) {
       continue;

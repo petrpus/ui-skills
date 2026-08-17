@@ -154,6 +154,14 @@ stránku, která ho drží, a `javascript:` v odkazu nebo `data:text/html` v rá
 udělají totéž. Zachycení proto rámy zavírá do prázdného `sandbox` (obsah
 zůstane, spouštění ne) a spustitelná URL zahazuje.
 
+**Zavřený shadow root se nezachytí vůbec.** Zjištěno při #30. Serializátor čte
+obsah přes `host.shadowRoot`, což u režimu `closed` vrací null komukoli zvenčí —
+takže obsah v kopii prostě není, a nic to neřekne. Platí to i pro ručně psaný
+`<template shadowrootmode="closed">`, protože prohlížeč ho při parsování uzavře
+dřív, než se k němu serializátor dostane. Stránka používající zavřené rooty se
+tedy reviduje s chybějícími kusy. Není to ztráta identifikátorů, ale ztráta
+obsahu, a je to horší, protože není vidět.
+
 **HTML se minifikuje** a shadow DOM se serializuje deklarativně. Porovnávání
 proto musí normalizovat bílé místo a procházet i shadow rooty.
 

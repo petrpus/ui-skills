@@ -194,6 +194,19 @@ describe("the assumptions the whole project rests on", () => {
     }
   });
 
+  it("loses what a closed shadow root holds — a limitation, recorded so it is noticed", () => {
+    // The fixture builds one with attachShadow({ mode: "closed" }). The
+    // serialiser reads shadow content through `host.shadowRoot`, which answers
+    // null for a closed root, so the content never reaches the snapshot: a page
+    // using closed roots is reviewed with pieces missing and nothing says so.
+    // Tracked as an issue; asserted here so that a serialiser which starts
+    // capturing them fails this test instead of surprising someone.
+    const snapshot = readFileSync(result.snapshotPath, "utf8");
+
+    expect(snapshot).toContain("Odstavec ve stínovém stromu.");
+    expect(snapshot).not.toContain("Odstavec v zavřeném stromu.");
+  });
+
   it("(d) carries no way to execute, even without a script tag", async () => {
     // The fixture ships the paths that need no script element: an executable
     // href, a ping, and a frame whose inlined document runs on load. Unit tests

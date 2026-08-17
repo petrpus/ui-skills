@@ -209,3 +209,31 @@ describe("elements a browser will not keep", () => {
     expect(templates.length).toBeGreaterThan(0);
   });
 });
+
+describe("a closed shadow root", () => {
+  const closed = `<html><body>
+    <div id="host"><template shadowrootmode="closed"><p>uvnitř zavřeného</p></template></div>
+  </body></html>`;
+
+  it("is opened, because a closed one answers with null to whoever follows an identifier", () => {
+    const { html } = instrument(closed);
+
+    expect(html).toContain('shadowrootmode="open"');
+    expect(html).not.toContain('shadowrootmode="closed"');
+  });
+
+  it("has its content identified like any other", () => {
+    const { map } = instrument(closed);
+    const shadowed = Object.values(map).filter((location) => location.hostPath.length > 0);
+
+    expect(shadowed.map((location) => location.textFingerprint)).toContain("uvnitř zavřeného");
+  });
+
+  it("leaves an already open root alone", () => {
+    const { html } = instrument(
+      '<html><body><div><template shadowrootmode="open"><p>ahoj</p></template></div></body></html>',
+    );
+
+    expect(html).toContain('shadowrootmode="open"');
+  });
+});

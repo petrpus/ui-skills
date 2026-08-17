@@ -46,6 +46,7 @@
   </section>
 
   <div id="host"></div>
+  <div id="closed-host"></div>
 
   <!-- Inline SVG, including a camelCase name and a foreign-namespace subtree:
        xpath resolves differently here, and without this the regression test
@@ -72,6 +73,13 @@
 </div>
 
 <script>
+  // Two shadow roots, one of each mode. A closed one answers `host.shadowRoot`
+  // with null to anyone outside it, so identifiers pointing into it would never
+  // resolve unless the capture opens it.
+  const closedHost = document.getElementById("closed-host");
+  const closedShadow = closedHost.attachShadow({ mode: "closed" });
+  closedShadow.innerHTML = '<p class="inner" id="closed-text">Odstavec v zavřeném stromu.</p>';
+
   // Shadow DOM with its own stylesheet: does the serialiser carry it across?
   const host = document.getElementById("host");
   const shadow = host.attachShadow({ mode: "open" });
