@@ -69,3 +69,68 @@ describe("the serialiser's own bootstrap script", () => {
     expect(html).toContain("uvnitř");
   });
 });
+
+describe("things that run without a script tag", () => {
+  it("sandboxes a frame instead of trusting its inlined document", () => {
+    // The serialiser inlines frames as srcdoc, so their content is part of the
+    // page under review — deleting it would lose real content. A srcdoc frame
+    // carrying a script runs it on load, with no interaction, and can reach the
+    // page holding it. An empty sandbox takes that away and keeps the content.
+    const { html, removed } = sanitize(
+      `<html><body><iframe srcdoc="<script>parent.postMessage('pwned','*')</script>"></iframe></body></html>`,
+    );
+    const { document } = new JSDOM(html).window;
+
+    expect(document.querySelector("iframe")?.getAttribute("sandbox")).toBe("");
+    expect(removed).toBe(1);
+  });
+
+  it("leaves an already sandboxed frame alone", () => {
+    const { removed } = sanitize(
+      '<html><body><iframe sandbox="" srcdoc="ahoj"></iframe></body></html>',
+    );
+
+    expect(removed).toBe(0);
+  });
+
+  it.each([
+    ["href", `<a href="javascript:steal()">odkaz</a>`],
+    ["src", `<img src="javascript:steal()">`],
+    ["formaction", `<button formaction="javascript:steal()">odeslat</button>`],
+    ["action", `<form action="javascript:steal()"></form>`],
+  ])("drops a %s that would execute instead of fetch", (attribute, markup) => {
+    const { html, removed } = sanitize(`<html><body>${markup}</body></html>`);
+
+    expect(html).not.toMatch(/javascript:/i);
+    expect(removed).toBe(1);
+    expect(html).not.toContain(`${attribute}="javascript`);
+  });
+
+  it("drops a data URL that carries a document of its own", () => {
+    const { html } = sanitize(
+      '<html><body><iframe src="data:text/html,<script>steal()</script>"></iframe></body></html>',
+    );
+
+    expect(html).not.toContain("data:text/html");
+  });
+
+  it("keeps an ordinary link and an ordinary image", () => {
+    const { html, removed } = sanitize(
+      '<html><body><a href="/kontakt">kontakt</a><img src="data:image/gif;base64,R0lGOD"></body></html>',
+    );
+
+    expect(html).toContain('href="/kontakt"');
+    expect(html).toContain("data:image/gif");
+    expect(removed).toBe(0);
+  });
+
+  it("removes a script inside svg, which is a different element with the same name", () => {
+    const { html, removed } = sanitize(
+      "<html><body><svg><script>steal()</script><circle r='5'/></svg></body></html>",
+    );
+
+    expect(html).not.toContain("steal()");
+    expect(html).toContain("circle");
+    expect(removed).toBe(1);
+  });
+});

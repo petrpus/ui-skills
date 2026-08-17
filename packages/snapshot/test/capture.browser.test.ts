@@ -1,5 +1,4 @@
 import { existsSync, readFileSync, rmSync } from "node:fs";
-import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { chromium } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -104,35 +103,96 @@ describe("the assumptions the whole project rests on", () => {
     expect(widthsDiffer).toBe(true);
   }, 60_000);
 
-  it("(c) can be walked by the identifiers it was given", async () => {
+  it("(c) every selector resolves to the element it was recorded for", async () => {
+    // Shadow elements are resolved here rather than waved through. An earlier
+    // version skipped anything inside a shadow root and counted it as matched,
+    // so it reported total success on the one input where the identifiers
+    // resolved to nothing at all.
     const { browser, page } = await openSnapshot();
 
-    const resolved = await page.evaluate(
+    const failures = await page.evaluate(
       ([entries, attribute]) => {
-        let matched = 0;
-        for (const [id, selector] of entries as [string, string][]) {
-          // Identifiers inside a shadow root are addressed through their host,
-          // so only the document tree is checked here.
-          if (selector.includes("#shadow-")) {
-            matched += 1;
+        const problems: string[] = [];
+
+        for (const [id, hostPath, selector] of entries as [string, string[], string][]) {
+          let root: Document | ShadowRoot = document;
+          let reachable = true;
+
+          for (const hostSelector of hostPath) {
+            const host: Element | null = root.querySelector(hostSelector);
+            if (host?.shadowRoot == null) {
+              problems.push(`${id}: hostitel ${hostSelector} nemá shadow root`);
+              reachable = false;
+              break;
+            }
+            root = host.shadowRoot;
+          }
+          if (!reachable) {
             continue;
           }
-          const found = document.querySelectorAll(selector);
-          if (found.length === 1 && found[0]?.getAttribute(attribute as string) === id) {
-            matched += 1;
+
+          const found = root.querySelectorAll(selector);
+          if (found.length !== 1) {
+            problems.push(`${id}: ${found.length} shod pro ${selector}`);
+          } else if (found[0]?.getAttribute(attribute as string) !== id) {
+            problems.push(`${id}: selektor našel jiný prvek`);
           }
         }
-        return matched;
+        return problems;
       },
       [
-        Object.entries(map).map(([id, location]) => [id, location.selector]),
+        Object.entries(map).map(([id, location]) => [id, location.hostPath, location.selector]),
         CX_ID_ATTRIBUTE,
       ] as const,
     );
 
     await browser.close();
-    expect(resolved).toBe(Object.keys(map).length);
+    expect(failures).toEqual([]);
   }, 60_000);
+
+  it("(c) every xpath resolves to the element it was recorded for", async () => {
+    // Asserted by evaluating it, not by matching its shape. A shape assertion
+    // once locked in a bug: lowercasing every step made camelCase SVG names
+    // like foreignObject unresolvable, and the regex demanded the lowercase.
+    const { browser, page } = await openSnapshot();
+
+    const failures = await page.evaluate(
+      ([entries, attribute]) => {
+        const problems: string[] = [];
+
+        for (const [id, xpath] of entries as [string, string][]) {
+          let node: Node | null = null;
+          try {
+            node = document.evaluate(xpath, document, null, 9, null).singleNodeValue;
+          } catch (error) {
+            problems.push(`${id}: ${xpath} není platný xpath — ${(error as Error).message}`);
+            continue;
+          }
+          if ((node as Element | null)?.getAttribute(attribute as string) !== id) {
+            problems.push(`${id}: ${xpath} vede jinam`);
+          }
+        }
+        return problems;
+      },
+      [
+        Object.entries(map)
+          .filter(([, location]) => location.xpath !== undefined)
+          .map(([id, location]) => [id, location.xpath]),
+        CX_ID_ATTRIBUTE,
+      ] as const,
+    );
+
+    await browser.close();
+    expect(failures).toEqual([]);
+  }, 60_000);
+
+  it("(c) an element without an xpath says which hosts to open instead", () => {
+    const withoutXpath = Object.entries(map).filter(([, location]) => location.xpath === undefined);
+
+    for (const [id, location] of withoutXpath) {
+      expect(location.hostPath.length, id).toBeGreaterThan(0);
+    }
+  });
 
   it("(d) runs nothing and asks for nothing", async () => {
     const { browser, page, requests } = await openSnapshot();

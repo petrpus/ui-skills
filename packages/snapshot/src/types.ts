@@ -11,8 +11,24 @@
  * they rarely fail together.
  */
 export interface ElementLocation {
+  /** Path within the element's own tree — the document, or one shadow root. */
   readonly selector: string;
-  readonly xpath: string;
+  /**
+   * Selectors for the hosts to open, outermost first, before `selector` applies.
+   * Empty for an ordinary element.
+   *
+   * A single CSS string cannot express this: selectors do not cross a shadow
+   * boundary, so an identifier written as one string resolved to nothing every
+   * time. Reaching the element means querying the host, stepping into its
+   * `shadowRoot`, and repeating.
+   */
+  readonly hostPath: readonly string[];
+  /**
+   * XPath within the element's own tree. Present only for elements in the
+   * document itself: `document.evaluate` cannot cross a shadow boundary either,
+   * and an expression that throws is worse than one that is absent.
+   */
+  readonly xpath?: string;
   readonly textFingerprint: string;
   /** `soubor:řádek` left by a build-time plugin, when the project has one (phase 2). */
   readonly sourceHint?: string;

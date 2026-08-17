@@ -13,6 +13,8 @@ interface SingleFileOptions {
   /** A browser that can reach the network. Its own could open files but not URLs. */
   readonly browserExecutablePath?: string;
   readonly loadMaxTimeMs?: number;
+  /** Overridable so the guards below can be tested without a browser. */
+  readonly singleFileBinary?: string;
 }
 
 export interface CaptureResult {
@@ -50,7 +52,8 @@ function runSingleFile(url: string, outPath: string, options: SingleFileOptions)
     args.push("--browser-executable-path", options.browserExecutablePath);
   }
 
-  const result = spawnSync(resolve("node_modules/.bin/single-file"), args, {
+  const binary = options.singleFileBinary ?? resolve("node_modules/.bin/single-file");
+  const result = spawnSync(binary, args, {
     encoding: "utf8",
     timeout: 180_000,
   });

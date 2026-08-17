@@ -145,7 +145,14 @@ stavbě #30: soubor obsahuje jeden vlastní skript serializátoru
 sám odstraní. Měření kritéria (d) počítalo skripty v načtené stránce, a proto
 hlásilo nulu — správně pro to, co běží dál, ale ne pro to, co se spustí. Prohlížeč
 si deklarativní shadow rooty připojí i bez něj (ověřeno), takže ho zachycení
-zahazuje; kopie servírovaná z localhostu tím nespouští vůbec nic.
+zahazuje.
+
+Zahodit skripty přitom nestačí. Při review #30 se ukázalo, že zachycená stránka
+si může přinést vlastní spouštěcí cesty, které žádný `<script>` nemají: rám
+vložený jako `srcdoc` spustí skript uvnitř sebe hned po načtení a dosáhne na
+stránku, která ho drží, a `javascript:` v odkazu nebo `data:text/html` v rámu
+udělají totéž. Zachycení proto rámy zavírá do prázdného `sandbox` (obsah
+zůstane, spouštění ne) a spustitelná URL zahazuje.
 
 **HTML se minifikuje** a shadow DOM se serializuje deklarativně. Porovnávání
 proto musí normalizovat bílé místo a procházet i shadow rooty.

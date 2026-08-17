@@ -47,7 +47,7 @@ function fingerprint(element: Element): string {
   return (element.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 120);
 }
 
-function elementChildren(parent: Element): Element[] {
+function elementChildren(parent: { childNodes: ArrayLike<unknown> }): Element[] {
   return Array.from(parent.childNodes).filter(
     (node): node is Element => (node as Element).nodeType === 1,
   );
@@ -58,8 +58,17 @@ function parentElement(element: Element): Element | null {
   return parent !== null && parent.nodeType === 1 ? parent : null;
 }
 
+/**
+ * Counted among all element siblings, whatever holds them.
+ *
+ * The parent of a shadow root's top-level element is a fragment, not an
+ * element. Asking for a parent *element* returned nothing there, so every such
+ * element was called the first child — and a stylesheet sitting ahead of it in
+ * the shadow root made that wrong, silently, for exactly the elements a
+ * reviewer reaches through a host.
+ */
 function positionAmongSiblings(element: Element): number {
-  const parent = parentElement(element);
+  const parent = element.parentNode as { childNodes: ArrayLike<unknown> } | null;
   return parent === null ? 1 : elementChildren(parent).indexOf(element) + 1;
 }
 
@@ -70,33 +79,40 @@ function positionAmongSiblings(element: Element): number {
  * between builds, and a snapshot may be reviewed against a source tree that has
  * moved on. Position at least fails loudly.
  */
-function selectorFor(element: Element, root: string): string {
+function selectorFor(element: Element): string {
   const steps: string[] = [];
   let current: Element | null = element;
 
   while (current !== null) {
-    const tag = current.tagName.toLowerCase();
+    const tag = current.localName.toLowerCase();
     steps.unshift(`${tag}:nth-child(${positionAmongSiblings(current)})`);
     current = parentElement(current);
   }
 
-  return [root, ...steps].filter(Boolean).join(" > ");
+  return steps.join(" > ");
 }
 
-function xpathFor(element: Element, root: string): string {
+function xpathFor(element: Element): string {
   const steps: string[] = [];
   let current: Element | null = element;
 
   while (current !== null) {
     const step: Element = current;
     const parent = parentElement(step);
-    const sameTag =
-      parent === null ? [step] : elementChildren(parent).filter((n) => n.tagName === step.tagName);
-    steps.unshift(`${step.tagName.toLowerCase()}[${sameTag.indexOf(step) + 1}]`);
+    const holder = (step.parentNode as { childNodes: ArrayLike<unknown> } | null) ?? null;
+    const sameName =
+      holder === null
+        ? [step]
+        : elementChildren(holder).filter((sibling) => sibling.localName === step.localName);
+    // `localName`, not a lowercased tag name. XPath name tests are
+    // case-sensitive for foreign elements, so `foreignobject` selects nothing
+    // where `foreignObject` selects the element — and SVG exports are full of
+    // camelCase names like linearGradient and clipPath.
+    steps.unshift(`${step.localName}[${sameName.indexOf(step) + 1}]`);
     current = parent;
   }
 
-  return `${root}/${steps.join("/")}`;
+  return `/${steps.join("/")}`;
 }
 
 /**
@@ -114,20 +130,24 @@ function shadowTemplates(root: Queryable): Element[] {
 
 interface Walk {
   readonly element: Element;
-  /** Prefix identifying which tree the element lives in — the document, or a shadow root. */
-  readonly root: string;
+  /** Hosts to open before this element's own selector applies, outermost first. */
+  readonly hostPath: readonly string[];
 }
 
-function walk(root: Queryable, rootPath: string): Walk[] {
+function walk(root: Queryable, hostPath: readonly string[]): Walk[] {
   const found: Walk[] = [];
 
   for (const element of Array.from(root.querySelectorAll("*"))) {
-    found.push({ element, root: rootPath });
+    found.push({ element, hostPath });
   }
 
-  for (const [index, template] of shadowTemplates(root).entries()) {
+  for (const template of shadowTemplates(root)) {
+    const host = parentElement(template);
+    if (host === null) {
+      continue;
+    }
     const content = (template as Element & { content: Queryable }).content;
-    found.push(...walk(content, `${rootPath}#shadow-${index}`));
+    found.push(...walk(content, [...hostPath, selectorFor(host)]));
   }
 
   return found;
@@ -149,16 +169,19 @@ export function instrument(html: string): Instrumented {
   const { document } = new JSDOM(html).window;
   const map: Record<string, ElementLocation> = Object.create(null);
 
-  const elements = walk(document as unknown as Queryable, "").filter(
+  const elements = walk(document as unknown as Queryable, []).filter(
     ({ element }) => !SKIPPED.has(element.tagName) && !isShadowTemplate(element),
   );
 
-  elements.forEach(({ element, root }, index) => {
+  elements.forEach(({ element, hostPath }, index) => {
     const id = `cx-${index}`;
     element.setAttribute(CX_ID_ATTRIBUTE, id);
     map[id] = {
-      selector: selectorFor(element, root),
-      xpath: xpathFor(element, root),
+      selector: selectorFor(element),
+      hostPath,
+      // Only for the document tree: document.evaluate cannot enter a shadow
+      // root, and an expression that throws is worse than one that is absent.
+      ...(hostPath.length === 0 ? { xpath: xpathFor(element) } : {}),
       textFingerprint: fingerprint(element),
     };
   });

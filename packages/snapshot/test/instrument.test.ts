@@ -76,14 +76,15 @@ describe("instrument", () => {
       const { map } = instrument(page);
       const entry = Object.values(map).find((location) => location.textFingerprint === "Text dvě.");
 
-      expect(entry?.xpath).toMatch(/^(\/[a-z]+\[\d+\])+$/);
+      expect(entry?.xpath).toMatch(/^(\/[A-Za-z]+\[\d+\])+$/);
     });
 
     it("differs between two elements that share a tag and a parent", () => {
       const { map } = instrument(page);
       const articles = Object.values(map).filter(
         (location) =>
-          location.xpath.endsWith("article[1]") || location.xpath.endsWith("article[2]"),
+          location.xpath?.endsWith("article[1]") === true ||
+          location.xpath?.endsWith("article[2]") === true,
       );
 
       expect(new Set(articles.map((location) => location.xpath)).size).toBe(articles.length);
@@ -110,7 +111,7 @@ describe("instrument", () => {
 
     it("is empty for an element with no text, rather than absent", () => {
       const { map } = instrument(page);
-      const image = Object.values(map).find((location) => location.xpath.includes("img"));
+      const image = Object.values(map).find((location) => location.xpath?.includes("img") === true);
 
       expect(image?.textFingerprint).toBe("");
     });
@@ -139,24 +140,22 @@ describe("instrument", () => {
       // Matched on the identifier's tree, not on the text: the host element's
       // own textContent includes what the template holds, so searching by text
       // finds the host first and would pass without the shadow being walked.
-      const shadowed = Object.values(map).filter((location) =>
-        location.selector.includes("#shadow-"),
-      );
+      const shadowed = Object.values(map).filter((location) => location.hostPath.length > 0);
 
       expect(shadowed.map((location) => location.textFingerprint)).toContain(
         "Odstavec ve stínovém stromu.",
       );
     });
 
-    it("marks their identifiers as belonging to another tree", () => {
+    it("records the hosts to open, and no xpath, since neither can cross a shadow boundary", () => {
       const { map } = instrument(withShadow);
-      const shadowed = Object.values(map).filter((location) =>
-        location.selector.includes("#shadow-"),
-      );
+      const shadowed = Object.values(map).filter((location) => location.hostPath.length > 0);
 
       expect(shadowed.length).toBeGreaterThan(0);
       for (const location of shadowed) {
-        expect(location.xpath).toContain("#shadow-");
+        expect(location.hostPath[0]).toContain("div:nth-child(1)");
+        expect(location.selector).not.toContain("#shadow-");
+        expect(location.xpath).toBeUndefined();
       }
     });
 
@@ -166,7 +165,8 @@ describe("instrument", () => {
         (location) => location.textFingerprint === "Odstavec ve světle.",
       );
 
-      expect(light?.selector).not.toContain("#shadow-");
+      expect(light?.hostPath).toEqual([]);
+      expect(light?.xpath).toBeDefined();
     });
   });
 
@@ -195,9 +195,7 @@ describe("elements a browser will not keep", () => {
 
   it("still identifies what is inside it", () => {
     const { map } = instrument(withShadow);
-    const shadowed = Object.values(map).filter((location) =>
-      location.selector.includes("#shadow-"),
-    );
+    const shadowed = Object.values(map).filter((location) => location.hostPath.length > 0);
 
     expect(shadowed.map((location) => location.textFingerprint)).toContain("uvnitř");
   });
