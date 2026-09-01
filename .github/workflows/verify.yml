@@ -35,9 +35,52 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # Keyed on the whole lockfile — a playwright bump must bust it, and any
+      # other dependency bump busts it too (~115 MB re-download; acceptable,
+      # a stale browser build would be worse). Deliberately Node-agnostic:
+      # both matrix legs want the same chromium, a concurrent save conflict
+      # degrades gracefully.
+      - uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
       # The e2e verify step drives a real browser through the review loop.
-      # Only chromium: the capture suite (`pnpm test:capture`) still does not
-      # run here — that remains #38.
+      # On a cache hit this skips the download; the --with-deps apt step
+      # still runs every time.
       - run: pnpm exec playwright install --with-deps chromium
 
       - run: pnpm run verify
+
+  # The four criteria the whole project stands on — custom properties stay
+  # writable, media queries respond, identifiers resolve in a browser, the
+  # copy is inert — need a real browser and a real serialiser run. A separate
+  # job, so the main verify matrix is not slowed down; on every PR, because a
+  # serialiser regression is cheapest to catch before it merges. One Node
+  # version, and it must be 24: the serialiser's own dependency (simple-cdp)
+  # uses the CloseEvent global, which Node only has since 23 — on 22 the
+  # capture crashes inside the tool. Our engines claim (>=22) stays covered
+  # by the verify matrix; this suite exercises the serialiser, not Node.
+  capture:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Same key as the verify job on purpose — one browser cache per commit.
+      - uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - run: pnpm exec playwright install --with-deps chromium
+
+      - run: pnpm run test:capture
