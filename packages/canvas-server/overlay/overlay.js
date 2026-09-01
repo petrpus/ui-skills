@@ -47,6 +47,59 @@ const STYLES = `
     cursor: pointer;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
   }
+  [data-role="comment"] {
+    position: fixed;
+    width: 280px;
+    padding: 10px;
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    pointer-events: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 13px;
+    color: #111827;
+  }
+  [data-role="comment"] textarea {
+    resize: vertical;
+    min-height: 56px;
+    font: inherit;
+    padding: 6px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+  }
+  [data-role="comment"] .row {
+    display: flex;
+    gap: 6px;
+  }
+  [data-role="comment"] select {
+    flex: 1;
+    font: inherit;
+  }
+  [data-role="comment"] .row button {
+    flex: 1;
+    padding: 6px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  button[data-role="comment-save"] {
+    background: #1d4ed8;
+    color: #fff;
+  }
+  button[data-role="comment-cancel"] {
+    background: #e5e7eb;
+  }
+  [data-role="pin"] {
+    position: fixed;
+    width: 14px;
+    height: 14px;
+    border-radius: 50% 50% 50% 0;
+    background: #f59e0b;
+    outline: 2px solid #fff;
+    pointer-events: none;
+  }
   [data-role="toast"] {
     position: fixed;
     left: 50%;
@@ -72,6 +125,25 @@ const MARKUP = `
   <div data-role="toolbar">
     <button type="button" data-role="done" title="Ctrl+Enter">Hotovo</button>
   </div>
+  <div data-role="comment" hidden>
+    <textarea data-role="comment-text" placeholder="Komentář k prvku…"></textarea>
+    <div class="row">
+      <select data-role="comment-category">
+        <option value="change-request">požadavek</option>
+        <option value="question">otázka</option>
+        <option value="idea">nápad</option>
+      </select>
+      <select data-role="comment-priority">
+        <option value="low">nízká</option>
+        <option value="medium" selected>střední</option>
+        <option value="high">vysoká</option>
+      </select>
+    </div>
+    <div class="row">
+      <button type="button" data-role="comment-save">Uložit</button>
+      <button type="button" data-role="comment-cancel">Zrušit</button>
+    </div>
+  </div>
   <div data-role="toast" hidden></div>
 `;
 
@@ -95,12 +167,21 @@ export function initOverlay(win) {
   const selectBox = shadow.querySelector("[data-role='select']");
   const doneButton = shadow.querySelector("[data-role='done']");
   const toast = shadow.querySelector("[data-role='toast']");
+  const commentForm = shadow.querySelector("[data-role='comment']");
+  const commentText = shadow.querySelector("[data-role='comment-text']");
+  const commentCategory = shadow.querySelector("[data-role='comment-category']");
+  const commentPriority = shadow.querySelector("[data-role='comment-priority']");
 
   let hovered = null;
   let selected = null;
   /** { element, before } while an inline edit is open, otherwise null. */
   let editing = null;
   let closed = false;
+  /** The element the open comment bubble is pinned to, otherwise null. */
+  let commenting = null;
+  /** Elements with a saved comment, so their pins can follow the scroll. */
+  const pinned = [];
+  let cHeld = false;
 
   function place(box, element) {
     if (element === null) {
@@ -113,6 +194,19 @@ export function initOverlay(win) {
     box.style.width = `${rect.width}px`;
     box.style.height = `${rect.height}px`;
     box.removeAttribute("hidden");
+  }
+
+  /**
+   * True where a keystroke is ordinary typing rather than a chord: the frozen
+   * page can carry its own inputs and editable regions, and a word containing
+   * "c" typed into one of them must not arm the comment gesture.
+   */
+  function isTypingTarget(target) {
+    if (target === null || typeof target.tagName !== "string") {
+      return false;
+    }
+    const tag = target.tagName;
+    return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable === true;
   }
 
   function instrumentedFrom(event) {
@@ -202,18 +296,68 @@ export function initOverlay(win) {
     element.focus();
   }
 
+  function placePin(pin, element) {
+    const rect = element.getBoundingClientRect();
+    pin.style.top = `${rect.top - 6}px`;
+    pin.style.left = `${rect.right - 8}px`;
+  }
+
+  function addPin(element) {
+    const pin = doc.createElement("div");
+    pin.setAttribute("data-role", "pin");
+    shadow.appendChild(pin);
+    pinned.push({ element, pin });
+    placePin(pin, element);
+  }
+
+  function closeCommentForm() {
+    commenting = null;
+    commentForm.setAttribute("hidden", "");
+  }
+
+  function openCommentForm(element) {
+    commenting = element;
+    commentText.value = "";
+    commentCategory.value = "change-request";
+    commentPriority.value = "medium";
+    const rect = element.getBoundingClientRect();
+    commentForm.style.top = `${rect.bottom + 8}px`;
+    commentForm.style.left = `${rect.left}px`;
+    commentForm.removeAttribute("hidden");
+    commentText.focus();
+  }
+
+  function saveComment() {
+    if (commenting === null) {
+      return undefined;
+    }
+    const element = commenting;
+    const text = commentText.value.trim();
+    closeCommentForm();
+    if (text === "") {
+      return undefined;
+    }
+    addPin(element);
+    return send({
+      type: "comment",
+      cxId: element.getAttribute("data-cx-id"),
+      text,
+      category: commentCategory.value,
+      priority: commentPriority.value,
+    });
+  }
+
   async function finishReview() {
     if (closed) {
       return;
     }
     // Flush, don't discard: "finish typing, hit Ctrl+Enter" is the normal
-    // way to leave the last edit — and /done must not outrun it to the log,
-    // so the flush is awaited before the review compiles.
-    const flush = commitEdit();
+    // way to leave the last edit or comment — and /done must not outrun
+    // either to the log, so the flushes are awaited before the review
+    // compiles. An empty comment draft is the one thing dropped silently.
+    const flushes = [commitEdit(), saveComment()].filter((flush) => flush !== undefined);
     closed = true;
-    if (flush !== undefined) {
-      await flush;
-    }
+    await Promise.all(flushes);
     hovered = null;
     place(hoverBox, null);
     try {
@@ -252,8 +396,14 @@ export function initOverlay(win) {
       if (editing !== null) {
         commitEdit();
       }
+      if (commenting !== null) {
+        closeCommentForm();
+      }
       selected = element;
       place(selectBox, selected);
+      if (cHeld && element !== null) {
+        openCommentForm(element);
+      }
     },
     true,
   );
@@ -264,6 +414,11 @@ export function initOverlay(win) {
       return;
     }
     event.preventDefault();
+    // Explicit, not left to the click pair that precedes a native dblclick —
+    // a synthetic dblclick arrives without them.
+    if (commenting !== null) {
+      closeCommentForm();
+    }
     selected = element;
     place(selectBox, selected);
     startEditing(element);
@@ -273,12 +428,60 @@ export function initOverlay(win) {
     if (event.key === "Enter" && event.ctrlKey) {
       event.preventDefault();
       finishReview();
+      return;
     }
+    // Held only when it cannot be ordinary typing: not from the overlay's
+    // own form (retargeted to host), not mid-edit, and not from the frozen
+    // page's own inputs or editable regions.
+    if (
+      (event.key === "c" || event.key === "C") &&
+      event.target !== host &&
+      editing === null &&
+      !isTypingTarget(event.target)
+    ) {
+      cHeld = true;
+    }
+  });
+
+  doc.addEventListener("keyup", (event) => {
+    if (event.key === "c" || event.key === "C") {
+      cHeld = false;
+    }
+  });
+  // Alt-tab while holding C must not leave the flag stuck.
+  win.addEventListener("blur", () => {
+    cHeld = false;
+  });
+
+  commentText.addEventListener("keydown", (event) => {
+    // The bubble owns its keys: Ctrl+Enter saves the comment rather than
+    // closing the whole review under the writer's hands.
+    if (event.key === "Enter" && event.ctrlKey) {
+      event.preventDefault();
+      event.stopPropagation();
+      saveComment();
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      closeCommentForm();
+    }
+  });
+
+  shadow.querySelector("[data-role='comment-save']").addEventListener("click", () => {
+    saveComment();
+  });
+  shadow.querySelector("[data-role='comment-cancel']").addEventListener("click", () => {
+    closeCommentForm();
   });
 
   const reposition = () => {
     place(hoverBox, hovered);
     place(selectBox, selected);
+    for (const { element, pin } of pinned) {
+      placePin(pin, element);
+    }
   };
   win.addEventListener("scroll", reposition, { passive: true });
   win.addEventListener("resize", reposition, { passive: true });
