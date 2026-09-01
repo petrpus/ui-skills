@@ -1,6 +1,7 @@
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { validateReview } from "@ui-skills/schema";
 import { compileReview, renderReviewMarkdown } from "./compile.ts";
 import { parseEventLog } from "./events.ts";
@@ -34,6 +35,49 @@ function readBody(request: IncomingMessage): Promise<string> {
     request.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
     request.on("error", reject);
   });
+}
+
+const OVERLAY_PATH = fileURLToPath(new URL("../overlay/overlay.js", import.meta.url));
+
+/**
+ * External on purpose: with the boot in its own file, the served copy needs
+ * no inline-script allowance at all — the rewritten CSP below can stay at
+ * `script-src 'self'`.
+ */
+const OVERLAY_BOOT = 'import { initOverlay } from "/overlay.js";\ninitOverlay(window);\n';
+
+const OVERLAY_BOOTSTRAP = '<script type="module" src="/overlay-boot.js"></script>';
+
+// Global: policies from several meta tags combine restrictively, so one
+// surviving original would re-block the overlay despite the rewrite.
+const CSP_META_PATTERN = /<meta[^>]*http-equiv=["']content-security-policy["'][^>]*>/gi;
+
+/**
+ * The serialiser stamps snapshots with `default-src 'none'; script-src
+ * 'unsafe-inline' data:` — the right policy for a frozen file opened from
+ * disk, and exactly the wrong one for this server's copy, where it blocks
+ * the overlay module and every POST /events. The served copy therefore gets
+ * a policy that allows same-origin scripts and connections and nothing
+ * else — stricter about inline script than the original, not looser.
+ */
+const SERVED_CSP =
+  '<meta http-equiv="content-security-policy" content="default-src \'none\'; ' +
+  "font-src 'self' data:; img-src 'self' data:; style-src 'unsafe-inline'; " +
+  "media-src 'self' data:; script-src 'self'; connect-src 'self'; " +
+  "object-src 'none'; frame-src 'self' data:;\">";
+
+/**
+ * The overlay goes in at request time, never into the stored file: the
+ * snapshot on disk stays exactly what was captured, so re-serving, diffing
+ * or re-instrumenting it later starts from clean ground.
+ */
+function withOverlay(html: string): string {
+  const rewritten = html.replace(CSP_META_PATTERN, SERVED_CSP);
+  const closing = rewritten.toLowerCase().lastIndexOf("</body>");
+  if (closing === -1) {
+    return rewritten + OVERLAY_BOOTSTRAP;
+  }
+  return rewritten.slice(0, closing) + OVERLAY_BOOTSTRAP + rewritten.slice(closing);
 }
 
 function respondJson(response: ServerResponse, status: number, payload: unknown): void {
@@ -98,7 +142,19 @@ export function serveSession(sessionDir: string, port = 0): Promise<CanvasServer
 
     if (request.method === "GET" && path === "/") {
       response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-      response.end(readFileSync(snapshotPath));
+      response.end(withOverlay(readFileSync(snapshotPath, "utf8")));
+      return;
+    }
+
+    if (request.method === "GET" && path === "/overlay.js") {
+      response.writeHead(200, { "content-type": "text/javascript; charset=utf-8" });
+      response.end(readFileSync(OVERLAY_PATH));
+      return;
+    }
+
+    if (request.method === "GET" && path === "/overlay-boot.js") {
+      response.writeHead(200, { "content-type": "text/javascript; charset=utf-8" });
+      response.end(OVERLAY_BOOT);
       return;
     }
 

@@ -60,7 +60,47 @@ describe("serveSession", () => {
     const response = await fetch(url);
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toContain("text/html");
-    expect(await response.text()).toBe(SNAPSHOT);
+    expect(await response.text()).toContain('<h1 data-cx-id="cx-1">Naše služby</h1>');
+  });
+
+  it("do servírované kopie injektuje overlay, soubor snapshotu nechá čistý", async () => {
+    const { url } = await start();
+    const served = await (await fetch(url)).text();
+    expect(served).toContain('<script type="module" src="/overlay-boot.js"></script>');
+    expect(served).toMatch(/overlay-boot\.js.*<\/body>/s);
+    expect(readFileSync(join(sessionDir, "snapshot.html"), "utf8")).toBe(SNAPSHOT);
+  });
+
+  it("naservíruje overlay.js jako ES modul a boot, který ho spustí", async () => {
+    const { url } = await start();
+    const moduleResponse = await fetch(`${url}/overlay.js`);
+    expect(moduleResponse.status).toBe(200);
+    expect(moduleResponse.headers.get("content-type")).toContain("javascript");
+    expect(await moduleResponse.text()).toContain("export function initOverlay");
+
+    const bootResponse = await fetch(`${url}/overlay-boot.js`);
+    expect(bootResponse.status).toBe(200);
+    expect(await bootResponse.text()).toContain("initOverlay(window)");
+  });
+
+  it("CSP ze snapshotu přepíše tak, aby pustilo overlay a fetch na server", async () => {
+    // SingleFile stamps its snapshots with `default-src 'none'; script-src
+    // 'unsafe-inline' data:` — good for a file opened from disk, fatal for
+    // the served copy: it blocks both /overlay.js and POST /events.
+    const withCsp = SNAPSHOT.replace(
+      "<body>",
+      `<meta http-equiv="content-security-policy" content="default-src 'none'; script-src 'unsafe-inline' data:;"><body>`,
+    );
+    writeFileSync(join(sessionDir, "snapshot.html"), withCsp);
+
+    const { url } = await start();
+    const served = await (await fetch(url)).text();
+    const meta = served.match(/<meta[^>]*content-security-policy[^>]*>/i)?.[0] ?? "";
+    expect(meta).toContain("script-src 'self'");
+    expect(meta).toContain("connect-src 'self'");
+    expect(meta).not.toContain("unsafe-inline' data:");
+    // The file on disk keeps its strict policy.
+    expect(readFileSync(join(sessionDir, "snapshot.html"), "utf8")).toBe(withCsp);
   });
 
   it("neznámá cesta → 404", async () => {
