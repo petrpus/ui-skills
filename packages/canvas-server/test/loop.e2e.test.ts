@@ -75,15 +75,10 @@ it("smyčka drží: server → výběr → editace → komentář → Hotovo →
   await page.keyboard.up("c");
   await page.locator("[data-role='comment-text']").fill(COMMENT_TEXT);
   await page.locator("[data-role='comment-category']").selectOption("idea");
-  // The save button's POST is fire-and-forget in the overlay (#48), so the
-  // test waits for the server's 204 before closing — otherwise /done races
-  // the comment to the log and loses it only on a slow runner.
-  await Promise.all([
-    page.waitForResponse(
-      (response) => response.url().endsWith("/events") && response.status() === 204,
-    ),
-    page.locator("[data-role='comment-save']").click(),
-  ]);
+  // Deliberately no wait between saving and closing: the overlay itself
+  // must hold /done until every event POST lands (#48), and this is the
+  // one place that guarantee runs against a real server.
+  await page.locator("[data-role='comment-save']").click();
 
   // Hotovo compiles the log and shuts the server down.
   await page.locator("button[data-role='done']").click();

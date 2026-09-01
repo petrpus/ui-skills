@@ -277,14 +277,25 @@ export function initOverlay(win) {
     toast.removeAttribute("hidden");
   }
 
+  /**
+   * Every event POST still in the air. Fire-and-forget is right for the
+   * editing flow — but /done compiles from whatever reached the disk, so
+   * closing the review must first wait these out or a late event silently
+   * misses the log (#48).
+   */
+  const inFlight = new Set();
+
   function send(event) {
-    return win
+    const posted = win
       .fetch("/events", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(event),
       })
       .catch(() => say("⚠ událost se neuložila — server neodpovídá"));
+    inFlight.add(posted);
+    posted.finally(() => inFlight.delete(posted));
+    return posted;
   }
 
   function stopEditing(element) {
@@ -472,13 +483,15 @@ export function initOverlay(win) {
     if (closed) {
       return;
     }
-    // Flush, don't discard: "finish typing, hit Ctrl+Enter" is the normal
-    // way to leave the last edit or comment — and /done must not outrun
-    // either to the log, so the flushes are awaited before the review
-    // compiles. An empty comment draft is the one thing dropped silently.
-    const flushes = [commitEdit(), saveComment()].filter((flush) => flush !== undefined);
+    // Flush, don't discard: an open edit or comment draft is committed
+    // first, and then every event POST still in the air is awaited — the
+    // "Uložit" button's send is already detached from any draft state, and
+    // /done must not outrun any of them to the log. An empty comment draft
+    // is the one thing dropped silently.
+    commitEdit();
+    saveComment();
     closed = true;
-    await Promise.all(flushes);
+    await Promise.all([...inFlight]);
     hovered = null;
     place(hoverBox, null);
     updateBreadcrumb();
