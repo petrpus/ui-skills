@@ -57,7 +57,10 @@ jobs:
   # copy is inert — need a real browser and a real serialiser run. A separate
   # job, so the main verify matrix is not slowed down; on every PR, because a
   # serialiser regression is cheapest to catch before it merges. One Node
-  # version: the suite exercises the browser and the serialiser, not Node.
+  # version, and it must be 24: the serialiser's own dependency (simple-cdp)
+  # uses the CloseEvent global, which Node only has since 23 — on 22 the
+  # capture crashes inside the tool. Our engines claim (>=22) stays covered
+  # by the verify matrix; this suite exercises the serialiser, not Node.
   capture:
     runs-on: ubuntu-latest
     steps:
@@ -67,7 +70,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
