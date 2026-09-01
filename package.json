@@ -19,6 +19,7 @@
     "spike:snapshot": "tsx packages/snapshot/spike/run.ts",
     "canvas-snapshot": "tsx packages/snapshot/src/cli.ts",
     "canvas-serve": "tsx packages/canvas-server/src/cli.ts",
+    "ui-review": "tsx packages/canvas-server/src/ui-review.ts",
     "test:capture": "vitest run --config vitest.browser.config.ts"
   },
   "devDependencies": {
