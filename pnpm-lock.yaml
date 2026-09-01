@@ -50,6 +50,10 @@ importers:
       '@ui-skills/snapshot':
         specifier: workspace:*
         version: link:../snapshot
+    devDependencies:
+      '@ui-skills/demo-generator':
+        specifier: workspace:*
+        version: link:../demo-generator
 
   packages/demo-generator:
     dependencies:

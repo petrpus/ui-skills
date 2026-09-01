@@ -21,7 +21,8 @@
     "canvas-serve": "tsx packages/canvas-server/src/cli.ts",
     "ui-review": "tsx packages/canvas-server/src/ui-review.ts",
     "apply-review": "tsx packages/apply-review/src/cli.ts",
-    "test:capture": "vitest run --config vitest.browser.config.ts"
+    "test:capture": "vitest run --config vitest.browser.config.ts",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.8",

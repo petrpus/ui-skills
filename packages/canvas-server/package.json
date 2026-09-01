@@ -15,5 +15,8 @@
   "dependencies": {
     "@ui-skills/schema": "workspace:*",
     "@ui-skills/snapshot": "workspace:*"
+  },
+  "devDependencies": {
+    "@ui-skills/demo-generator": "workspace:*"
   }
 }
