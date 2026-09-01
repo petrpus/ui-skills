@@ -11,6 +11,7 @@ const STEPS = [
   ["typecheck", ["pnpm", "run", "typecheck"]],
   ["lint", ["pnpm", "run", "lint"]],
   ["test", ["pnpm", "run", "test"]],
+  ["e2e", ["pnpm", "run", "test:e2e"]],
 ];
 
 function writeStatus(status, failedStep) {
