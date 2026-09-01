@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { capture } from "@ui-skills/snapshot";
+import { capture, reportClosedShadowRoots, targetUrl } from "@ui-skills/snapshot";
 import { chromium } from "playwright";
 import { serveSession } from "./server.ts";
 
@@ -67,6 +67,14 @@ async function main(): Promise<void> {
       browserExecutablePath: chromium.executablePath(),
     });
     process.stdout.write(`✓ snapshot: ${captured.snapshotPath} (${captured.elements} prvků)\n`);
+
+    // Named before the human starts reviewing, not after: a copy with holes
+    // deserves distrust up front. Never fatal — a failed detection must not
+    // keep the review server from starting.
+    const warning = await reportClosedShadowRoots(targetUrl(input));
+    if (warning !== null) {
+      process.stderr.write(`${warning}\n`);
+    }
 
     const server = await serveSession(captured.sessionDir, port);
     process.stdout.write(

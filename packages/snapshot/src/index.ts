@@ -1,6 +1,13 @@
-export { type CaptureResult, capture } from "./capture.ts";
+export { type CaptureResult, capture, targetUrl } from "./capture.ts";
 export { instrument } from "./instrument.ts";
 export { sanitize } from "./sanitize.ts";
+export {
+  type CdpNode,
+  closedShadowWarning,
+  countClosedShadowRoots,
+  probeClosedShadowRoots,
+  reportClosedShadowRoots,
+} from "./shadow-probe.ts";
 export {
   CX_ID_ATTRIBUTE,
   type ElementLocation,

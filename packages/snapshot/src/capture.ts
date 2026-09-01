@@ -31,7 +31,8 @@ function sessionName(now: Date): string {
   return `session-${now.toISOString().replace(/[:.]/g, "-")}`;
 }
 
-function targetUrl(input: string): string {
+/** Exported for the shadow probe: both must open the very same address. */
+export function targetUrl(input: string): string {
   return /^https?:\/\//i.test(input) ? input : pathToFileURL(resolve(input)).href;
 }
 
