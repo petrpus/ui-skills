@@ -802,3 +802,99 @@ describe("reentrance commitEdit (#42 review)", () => {
     expect(event.defaultPrevented).toBe(false);
   });
 });
+
+describe("UX overlay (#44)", () => {
+  it("clampPosition drží bublinu ve viewportu", async () => {
+    const { clampPosition } = await import("../overlay/overlay.js");
+    const size = { width: 280, height: 160 };
+    const viewport = { width: 1000, height: 600 };
+
+    // Fits below the anchor → sits below with a margin.
+    expect(clampPosition({ top: 100, bottom: 120, left: 50 }, size, viewport)).toEqual({
+      top: 128,
+      left: 50,
+    });
+    // Bottom edge → flips above the anchor.
+    expect(clampPosition({ top: 500, bottom: 520, left: 50 }, size, viewport)).toEqual({
+      top: 332,
+      left: 50,
+    });
+    // Right edge → pulled back inside.
+    expect(clampPosition({ top: 100, bottom: 120, left: 900 }, size, viewport).left).toBe(712);
+    // Left overflow → margin.
+    expect(clampPosition({ top: 100, bottom: 120, left: -30 }, size, viewport).left).toBe(8);
+    // No room above nor below → clamped to the bottom margin.
+    const cramped = clampPosition({ top: 80, bottom: 520, left: 50 }, size, {
+      width: 1000,
+      height: 300,
+    });
+    expect(cramped.top).toBe(132);
+  });
+
+  it("chybový toast nepřepíše úspěšný — zprávy se skládají", async () => {
+    let failNext = true;
+    const mock = vi.fn((url: string) => {
+      if (url === "/events" && failNext) {
+        failNext = false;
+        return Promise.reject(new Error("spadlo"));
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ reviewPath: "/tmp/r.json" }),
+      });
+    });
+    (win as unknown as { fetch: unknown }).fetch = mock;
+
+    const host = initOverlay(win);
+    const heading = element("cx-0");
+    dispatch(heading, "dblclick");
+    heading.textContent = "Neuloží se";
+    heading.dispatchEvent(new win.FocusEvent("blur"));
+    await settled();
+
+    key("keydown", { key: "Enter", ctrlKey: true });
+    await settled();
+    await settled();
+
+    const toast = host?.shadowRoot?.querySelector("[data-role='toast']") as El;
+    const messages = Array.from(toast.querySelectorAll("[data-role='toast-message']")).map(
+      (note) => note.textContent,
+    );
+    expect(messages.some((text) => text?.includes("neuložila"))).toBe(true);
+    expect(messages.some((text) => text?.includes("/tmp/r.json"))).toBe(true);
+  });
+
+  it("Hotovo dává během čekání na flush zpětnou vazbu", async () => {
+    let resolveEvents: (() => void) | undefined;
+    const mock = vi.fn((url: string) => {
+      if (url === "/events") {
+        return new Promise((resolve) => {
+          resolveEvents = () => resolve({ ok: true, json: () => Promise.resolve({}) });
+        });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ reviewPath: "/tmp/r" }) });
+    });
+    (win as unknown as { fetch: unknown }).fetch = mock;
+
+    const host = initOverlay(win);
+    const heading = element("cx-0");
+    dispatch(heading, "dblclick");
+    heading.textContent = "Pomalu";
+    heading.dispatchEvent(new win.FocusEvent("blur"));
+    await settled();
+
+    const button = host?.shadowRoot?.querySelector("button[data-role='done']") as El & {
+      disabled: boolean;
+    };
+    dispatch(button, "click");
+    await settled();
+    expect(button.disabled).toBe(true);
+    expect(button.textContent).toContain("Ukládám");
+
+    resolveEvents?.();
+    await settled();
+    await settled();
+    const toast = host?.shadowRoot?.querySelector("[data-role='toast']") as El;
+    expect(toast.textContent).toContain("/tmp/r");
+  });
+});
