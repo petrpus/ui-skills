@@ -670,3 +670,135 @@ describe("flush rozlétnutých eventů před /done (#48)", () => {
     expect(mock.mock.calls.map((call) => call[0])).toEqual(["/events", "/done"]);
   });
 });
+
+describe("zavření záložky s rozdělanou prací (#42)", () => {
+  function beforeUnload(): boolean {
+    const event = new win.Event("beforeunload", { cancelable: true });
+    win.dispatchEvent(event);
+    return event.defaultPrevented;
+  }
+
+  it("eventy se posílají s keepalive — přežijí unload", async () => {
+    initOverlay(win);
+    const heading = element("cx-0");
+    dispatch(heading, "dblclick");
+    heading.textContent = "Trvanlivé";
+    heading.dispatchEvent(new win.FocusEvent("blur"));
+    await settled();
+
+    const [, options] = fetchMock.mock.calls[0] as [string, RequestInit & { keepalive?: boolean }];
+    expect(options.keepalive).toBe(true);
+  });
+
+  it("beforeunload varuje při rozepsané změněné editaci", () => {
+    initOverlay(win);
+    const heading = element("cx-0");
+    dispatch(heading, "dblclick");
+    heading.textContent = "Rozepsáno";
+    expect(beforeUnload()).toBe(true);
+  });
+
+  it("beforeunload varuje při neprázdném konceptu komentáře", () => {
+    const host = initOverlay(win);
+    key("keydown", { key: "c" });
+    dispatch(element("cx-1"), "click");
+    key("keyup", { key: "c" });
+    (
+      host?.shadowRoot?.querySelector("[data-role='comment-text']") as El & { value: string }
+    ).value = "Rozepsaný koncept";
+    expect(beforeUnload()).toBe(true);
+  });
+
+  it("bez rozdělané práce ani po uzavření review nevaruje", async () => {
+    initOverlay(win);
+    expect(beforeUnload()).toBe(false);
+
+    const heading = element("cx-0");
+    dispatch(heading, "dblclick");
+    expect(beforeUnload()).toBe(false); // editace beze změny není rozdělaná práce
+
+    key("keydown", { key: "Enter", ctrlKey: true });
+    await settled();
+    expect(beforeUnload()).toBe(false);
+  });
+
+  it("pagehide flushne rozepsanou editaci", async () => {
+    initOverlay(win);
+    const heading = element("cx-0");
+    dispatch(heading, "dblclick");
+    heading.textContent = "Na odchodu";
+
+    win.dispatchEvent(new win.Event("pagehide"));
+    await settled();
+
+    expect(heading.hasAttribute("contenteditable")).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const body = JSON.parse((fetchMock.mock.calls[0] as [string, RequestInit])[1].body as string);
+    expect(body).toMatchObject({ type: "text-edit", after: "Na odchodu" });
+  });
+
+  it("pagehide flushne i neprázdný koncept komentáře", async () => {
+    const host = initOverlay(win);
+    key("keydown", { key: "c" });
+    dispatch(element("cx-1"), "click");
+    key("keyup", { key: "c" });
+    (
+      host?.shadowRoot?.querySelector("[data-role='comment-text']") as El & { value: string }
+    ).value = "Poslední slovo.";
+
+    win.dispatchEvent(new win.Event("pagehide"));
+    await settled();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const body = JSON.parse((fetchMock.mock.calls[0] as [string, RequestInit])[1].body as string);
+    expect(body).toMatchObject({ type: "comment", text: "Poslední slovo." });
+  });
+
+  it("pagehide po uzavření review nic neposílá", async () => {
+    initOverlay(win);
+    key("keydown", { key: "Enter", ctrlKey: true });
+    await settled();
+    fetchMock.mockClear();
+
+    win.dispatchEvent(new win.Event("pagehide"));
+    await settled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("reentrance commitEdit (#42 review)", () => {
+  it("synchronní blur při odebrání contenteditable nepošle edit dvakrát", async () => {
+    initOverlay(win);
+    const heading = element("cx-0");
+    dispatch(heading, "dblclick");
+    heading.textContent = "Jednou";
+
+    // Real browsers fire blur synchronously when contenteditable is removed
+    // from the focused element; jsdom does not, so the quirk is simulated.
+    const originalRemove = heading.removeAttribute.bind(heading);
+    (heading as El & { removeAttribute(name: string): void }).removeAttribute = (name: string) => {
+      originalRemove(name);
+      if (name === "contenteditable") {
+        heading.dispatchEvent(new win.FocusEvent("blur"));
+      }
+    };
+
+    heading.dispatchEvent(new win.FocusEvent("blur"));
+    await settled();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("koncept komentáře jen z mezer beforeunload nevyzbrojí", () => {
+    const host = initOverlay(win);
+    key("keydown", { key: "c" });
+    dispatch(element("cx-1"), "click");
+    key("keyup", { key: "c" });
+    (
+      host?.shadowRoot?.querySelector("[data-role='comment-text']") as El & { value: string }
+    ).value = "   ";
+    const event = new win.Event("beforeunload", { cancelable: true });
+    win.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+  });
+});
