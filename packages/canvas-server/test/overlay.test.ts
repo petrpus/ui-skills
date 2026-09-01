@@ -604,3 +604,69 @@ describe("breadcrumb — nálezy z review", () => {
     expect(section.getAttribute("contenteditable")).toBeTruthy();
   });
 });
+
+describe("flush rozlétnutých eventů před /done (#48)", () => {
+  interface Deferred {
+    resolve(): void;
+  }
+
+  function deferredFetch(): { mock: ReturnType<typeof vi.fn>; pending: Deferred[] } {
+    const pending: Deferred[] = [];
+    const mock = vi.fn((url: string) => {
+      if (url === "/events") {
+        return new Promise((resolve) => {
+          pending.push({
+            resolve: () => resolve({ ok: true, json: () => Promise.resolve({}) }),
+          });
+        });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ reviewPath: "/tmp/r" }) });
+    });
+    return { mock, pending };
+  }
+
+  it("Hotovo počká na event z blur commitu, /done neodejde dřív", async () => {
+    const { mock, pending } = deferredFetch();
+    (win as unknown as { fetch: unknown }).fetch = mock;
+    initOverlay(win);
+
+    const heading = element("cx-0");
+    dispatch(heading, "dblclick");
+    heading.textContent = "Rozlétnuté";
+    heading.dispatchEvent(new win.FocusEvent("blur"));
+    await settled();
+    expect(pending).toHaveLength(1);
+
+    key("keydown", { key: "Enter", ctrlKey: true });
+    await settled();
+    expect(mock.mock.calls.map((call) => call[0])).toEqual(["/events"]);
+
+    pending[0]?.resolve();
+    await settled();
+    expect(mock.mock.calls.map((call) => call[0])).toEqual(["/events", "/done"]);
+  });
+
+  it("Uložit a hned Hotovo: komentář závod nikdy neprohraje", async () => {
+    const { mock, pending } = deferredFetch();
+    (win as unknown as { fetch: unknown }).fetch = mock;
+    const host = initOverlay(win);
+
+    key("keydown", { key: "c" });
+    dispatch(element("cx-1"), "click");
+    key("keyup", { key: "c" });
+    (
+      host?.shadowRoot?.querySelector("[data-role='comment-text']") as El & { value: string }
+    ).value = "Na hraně.";
+    dispatch(host?.shadowRoot?.querySelector("[data-role='comment-save']") as El, "click");
+    await settled();
+    expect(pending).toHaveLength(1);
+
+    dispatch(host?.shadowRoot?.querySelector("button[data-role='done']") as El, "click");
+    await settled();
+    expect(mock.mock.calls.map((call) => call[0])).toEqual(["/events"]);
+
+    pending[0]?.resolve();
+    await settled();
+    expect(mock.mock.calls.map((call) => call[0])).toEqual(["/events", "/done"]);
+  });
+});
