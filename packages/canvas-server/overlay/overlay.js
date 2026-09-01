@@ -47,6 +47,52 @@ const STYLES = `
     cursor: pointer;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
   }
+  [data-role="breadcrumb"] {
+    position: fixed;
+    left: 16px;
+    bottom: 16px;
+    max-width: calc(100vw - 180px);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: #111827;
+    color: #f9fafb;
+    font-size: 13px;
+    pointer-events: auto;
+    /* A deep chain scrolls inside the bar instead of wrapping over the page. */
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+  [data-role="breadcrumb"] button {
+    border: none;
+    background: none;
+    color: #9ca3af;
+    font: inherit;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 4px;
+  }
+  [data-role="breadcrumb"] button:hover {
+    color: #f9fafb;
+    background: rgba(255, 255, 255, 0.1);
+  }
+  [data-role="breadcrumb"] button[data-current="true"] {
+    color: #f9fafb;
+    font-weight: 600;
+  }
+  [data-role="breadcrumb"] .sep {
+    color: #4b5563;
+    user-select: none;
+  }
+  [data-role="breadcrumb"] .actions {
+    display: flex;
+    gap: 4px;
+    margin-left: 8px;
+    padding-left: 8px;
+    border-left: 1px solid #374151;
+  }
   [data-role="comment"] {
     position: fixed;
     width: 280px;
@@ -125,6 +171,13 @@ const MARKUP = `
   <div data-role="toolbar">
     <button type="button" data-role="done" title="Ctrl+Enter">Hotovo</button>
   </div>
+  <div data-role="breadcrumb" hidden>
+    <span data-role="crumbs"></span>
+    <span class="actions">
+      <button type="button" data-role="crumb-edit" title="Upravit text výběru">✎ text</button>
+      <button type="button" data-role="crumb-comment" title="Komentovat výběr">💬 komentář</button>
+    </span>
+  </div>
   <div data-role="comment" hidden>
     <textarea data-role="comment-text" placeholder="Komentář k prvku…"></textarea>
     <div class="row">
@@ -167,6 +220,8 @@ export function initOverlay(win) {
   const selectBox = shadow.querySelector("[data-role='select']");
   const doneButton = shadow.querySelector("[data-role='done']");
   const toast = shadow.querySelector("[data-role='toast']");
+  const breadcrumbBar = shadow.querySelector("[data-role='breadcrumb']");
+  const crumbsHolder = shadow.querySelector("[data-role='crumbs']");
   const commentForm = shadow.querySelector("[data-role='comment']");
   const commentText = shadow.querySelector("[data-role='comment-text']");
   const commentCategory = shadow.querySelector("[data-role='comment-category']");
@@ -296,6 +351,72 @@ export function initOverlay(win) {
     element.focus();
   }
 
+  /**
+   * Instrumented ancestors from the outermost down to the element itself.
+   * Walks parentElement, so the chain stops at a shadow boundary — clicks
+   * from inside a nested shadow tree retarget to the host before they reach
+   * selection anyway, so nothing deeper can become `selected` today.
+   */
+  function chainFor(element) {
+    const chain = [];
+    let current = element;
+    while (current !== null) {
+      if (typeof current.getAttribute === "function" && current.getAttribute("data-cx-id") !== null) {
+        chain.unshift(current);
+      }
+      current = current.parentElement;
+    }
+    return chain;
+  }
+
+  function updateBreadcrumb() {
+    crumbsHolder.textContent = "";
+    if (selected === null || closed) {
+      breadcrumbBar.setAttribute("hidden", "");
+      return;
+    }
+    chainFor(selected).forEach((ancestor, index) => {
+      if (index > 0) {
+        const separator = doc.createElement("span");
+        separator.className = "sep";
+        separator.textContent = "›";
+        crumbsHolder.appendChild(separator);
+      }
+      const crumb = doc.createElement("button");
+      crumb.type = "button";
+      crumb.setAttribute("data-role", "crumb");
+      // Tag name only: the snapshot's class names are minified noise, and the
+      // id, when present, is the one hint a human can actually recognise.
+      crumb.textContent = ancestor.id ? `${ancestor.localName}#${ancestor.id}` : ancestor.localName;
+      if (ancestor === selected) {
+        crumb.setAttribute("data-current", "true");
+      }
+      crumb.addEventListener("click", () => select(ancestor));
+      crumbsHolder.appendChild(crumb);
+    });
+    breadcrumbBar.removeAttribute("hidden");
+  }
+
+  /**
+   * The one path selection changes go through — and therefore the one place
+   * for the housekeeping every change needs: an open edit is committed (the
+   * reviewer's next keystrokes must not land in a no-longer-selected
+   * element) and an open comment bubble closed (saving it after promotion
+   * would pin it to the wrong element). A crumb click reaches only this
+   * function, so the guards cannot live in the document handlers alone.
+   */
+  function select(element) {
+    if (editing !== null && element !== editing.element) {
+      commitEdit();
+    }
+    if (commenting !== null) {
+      closeCommentForm();
+    }
+    selected = element;
+    place(selectBox, selected);
+    updateBreadcrumb();
+  }
+
   function placePin(pin, element) {
     const rect = element.getBoundingClientRect();
     pin.style.top = `${rect.top - 6}px`;
@@ -360,6 +481,7 @@ export function initOverlay(win) {
     await Promise.all(flushes);
     hovered = null;
     place(hoverBox, null);
+    updateBreadcrumb();
     try {
       const response = await win.fetch("/done", { method: "POST" });
       const result = await response.json();
@@ -393,14 +515,7 @@ export function initOverlay(win) {
         return;
       }
       event.preventDefault();
-      if (editing !== null) {
-        commitEdit();
-      }
-      if (commenting !== null) {
-        closeCommentForm();
-      }
-      selected = element;
-      place(selectBox, selected);
+      select(element);
       if (cHeld && element !== null) {
         openCommentForm(element);
       }
@@ -414,13 +529,7 @@ export function initOverlay(win) {
       return;
     }
     event.preventDefault();
-    // Explicit, not left to the click pair that precedes a native dblclick —
-    // a synthetic dblclick arrives without them.
-    if (commenting !== null) {
-      closeCommentForm();
-    }
-    selected = element;
-    place(selectBox, selected);
+    select(element);
     startEditing(element);
   });
 
@@ -466,6 +575,17 @@ export function initOverlay(win) {
       event.preventDefault();
       event.stopPropagation();
       closeCommentForm();
+    }
+  });
+
+  shadow.querySelector("[data-role='crumb-edit']").addEventListener("click", () => {
+    if (selected !== null && !closed) {
+      startEditing(selected);
+    }
+  });
+  shadow.querySelector("[data-role='crumb-comment']").addEventListener("click", () => {
+    if (selected !== null && !closed) {
+      openCommentForm(selected);
     }
   });
 
