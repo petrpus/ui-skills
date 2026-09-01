@@ -291,6 +291,12 @@ export function initOverlay(win) {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(event),
+        // Survives the tab closing mid-flight — the pagehide flush below
+        // would be theatre without it (#42). Applied to every send on
+        // purpose: any event can be the one in the air when the tab dies.
+        // The cost is fetch's shared ~64 KiB keepalive budget; a text edit
+        // that large is not a realistic review action.
+        keepalive: true,
       })
       .catch(() => say("⚠ událost se neuložila — server neodpovídá"));
     inFlight.add(posted);
@@ -299,10 +305,14 @@ export function initOverlay(win) {
   }
 
   function stopEditing(element) {
-    element.removeAttribute("contenteditable");
+    // State and listeners first, DOM last: removing contenteditable from a
+    // focused element fires blur synchronously in real browsers, and with
+    // the listener still attached that re-entered commitEdit while
+    // `editing` was still set — one edit, two log entries.
+    editing = null;
     element.removeEventListener("blur", onEditBlur);
     element.removeEventListener("keydown", onEditKeydown);
-    editing = null;
+    element.removeAttribute("contenteditable");
   }
 
   function commitEdit() {
@@ -607,6 +617,41 @@ export function initOverlay(win) {
   });
   shadow.querySelector("[data-role='comment-cancel']").addEventListener("click", () => {
     closeCommentForm();
+  });
+
+  /**
+   * Work that would vanish if the tab died right now: an in-place edit whose
+   * text differs from where it started, or a non-empty comment draft.
+   * Events already sent do not count — keepalive delivers those.
+   */
+  function hasUnsavedWork() {
+    if (closed) {
+      return false;
+    }
+    if (editing !== null && (editing.element.textContent ?? "") !== editing.before) {
+      return true;
+    }
+    return commenting !== null && commentText.value.trim() !== "";
+  }
+
+  win.addEventListener("beforeunload", (event) => {
+    if (hasUnsavedWork()) {
+      event.preventDefault();
+      // Legacy engines key the prompt off returnValue, not preventDefault.
+      event.returnValue = "";
+    }
+  });
+
+  // The user chose to leave anyway (or the prompt never showed): flush what
+  // can be flushed. Same policy as Hotovo — edits and non-empty drafts go to
+  // the log, an empty draft is dropped. Safe against a bfcache restore: the
+  // commit nulls the editing state, and repeated text-edits coalesce.
+  win.addEventListener("pagehide", () => {
+    if (closed) {
+      return;
+    }
+    commitEdit();
+    saveComment();
   });
 
   const reposition = () => {
