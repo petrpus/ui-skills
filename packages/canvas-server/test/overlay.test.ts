@@ -3,8 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { initOverlay } from "../overlay/overlay.js";
 
 const PAGE = `<!doctype html><html><head><title>t</title></head><body>
-  <h1 data-cx-id="cx-0">Naše služby</h1>
-  <p data-cx-id="cx-1">Odstavec</p>
+  <main data-cx-id="cx-9"><section data-cx-id="cx-8">
+    <h1 data-cx-id="cx-0">Naše služby</h1>
+    <p data-cx-id="cx-1">Odstavec</p>
+  </section></main>
   <div>bez identifikátoru</div>
 </body></html>`;
 
@@ -454,5 +456,151 @@ describe("komentáře — nálezy z review", () => {
 
     dispatch(element("cx-0"), "dblclick");
     expect(form(host).hasAttribute("hidden")).toBe(true);
+  });
+});
+
+describe("breadcrumb rodičů", () => {
+  function bar(host: ReturnType<typeof initOverlay>): El {
+    return host?.shadowRoot?.querySelector("[data-role='breadcrumb']") as El;
+  }
+
+  function crumbs(host: ReturnType<typeof initOverlay>): El[] {
+    return Array.from(
+      host?.shadowRoot?.querySelectorAll("button[data-role='crumb']") ?? [],
+    ) as El[];
+  }
+
+  it("bez výběru je lišta skrytá, výběr ukáže cestu rodičů s aktuálním prvkem na konci", () => {
+    const host = initOverlay(win);
+    expect(bar(host).hasAttribute("hidden")).toBe(true);
+
+    dispatch(element("cx-1"), "click");
+    expect(bar(host).hasAttribute("hidden")).toBe(false);
+    const labels = crumbs(host).map((crumb) => crumb.textContent);
+    expect(labels).toEqual(["main", "section", "p"]);
+    expect(crumbs(host)[2]?.getAttribute("data-current")).toBe("true");
+  });
+
+  it("kliknutí na položku cesty výběr povýší a zvýraznění se přesune", () => {
+    const host = initOverlay(win);
+    dispatch(element("cx-1"), "click");
+
+    const section = crumbs(host)[1] as El;
+    dispatch(section, "click");
+
+    const labels = crumbs(host).map((crumb) => crumb.textContent);
+    expect(labels).toEqual(["main", "section"]);
+    expect(crumbs(host)[1]?.getAttribute("data-current")).toBe("true");
+  });
+
+  it("komentář z lišty se váže na povýšený výběr, ne na původní prvek", async () => {
+    const host = initOverlay(win);
+    dispatch(element("cx-1"), "click");
+    dispatch(crumbs(host)[1] as El, "click");
+
+    dispatch(host?.shadowRoot?.querySelector("[data-role='crumb-comment']") as El, "click");
+    const text = host?.shadowRoot?.querySelector("[data-role='comment-text']") as El & {
+      value: string;
+    };
+    text.value = "Celou sekci přepracovat.";
+    dispatch(host?.shadowRoot?.querySelector("[data-role='comment-save']") as El, "click");
+    await settled();
+
+    const body = JSON.parse(
+      ((fetchMock.mock.calls[0] as [string, RequestInit])[1] as { body: string }).body,
+    );
+    expect(body).toMatchObject({ type: "comment", cxId: "cx-8" });
+  });
+
+  it("editace z lišty edituje povýšený výběr", async () => {
+    const host = initOverlay(win);
+    dispatch(element("cx-0"), "click");
+    dispatch(crumbs(host)[1] as El, "click");
+
+    dispatch(host?.shadowRoot?.querySelector("[data-role='crumb-edit']") as El, "click");
+    const section = element("cx-8");
+    expect(section.getAttribute("contenteditable")).toBeTruthy();
+
+    section.textContent = "Nový obsah sekce";
+    section.dispatchEvent(new win.FocusEvent("blur"));
+    await settled();
+
+    const body = JSON.parse(
+      ((fetchMock.mock.calls[0] as [string, RequestInit])[1] as { body: string }).body,
+    );
+    expect(body).toMatchObject({ type: "text-edit", cxId: "cx-8", after: "Nový obsah sekce" });
+  });
+
+  it("po uzavření review lišta zmizí a její akce nic nedělají", async () => {
+    const host = initOverlay(win);
+    dispatch(element("cx-1"), "click");
+    key("keydown", { key: "Enter", ctrlKey: true });
+    await settled();
+    fetchMock.mockClear();
+
+    expect(bar(host).hasAttribute("hidden")).toBe(true);
+    dispatch(host?.shadowRoot?.querySelector("[data-role='crumb-edit']") as El, "click");
+    expect(element("cx-1").hasAttribute("contenteditable")).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("prvek bez instrumentovaných rodičů má v cestě jen sám sebe", () => {
+    const host = initOverlay(win);
+    // html ani body nemají data-cx-id, main je nejvyšší instrumentovaný prvek
+    dispatch(element("cx-9"), "click");
+    expect(crumbs(host).map((crumb) => crumb.textContent)).toEqual(["main"]);
+  });
+});
+
+describe("breadcrumb — nálezy z review", () => {
+  function crumbs(host: ReturnType<typeof initOverlay>): El[] {
+    return Array.from(
+      host?.shadowRoot?.querySelectorAll("button[data-role='crumb']") ?? [],
+    ) as El[];
+  }
+
+  it("povýšení během editace ji nejdřív commitne — klávesy nejdou do špatného prvku", async () => {
+    const host = initOverlay(win);
+    const paragraph = element("cx-1");
+    dispatch(paragraph, "dblclick");
+    paragraph.textContent = "Rozepsáno";
+
+    dispatch(crumbs(host)[1] as El, "click");
+    await settled();
+
+    expect(paragraph.hasAttribute("contenteditable")).toBe(false);
+    const body = JSON.parse(
+      ((fetchMock.mock.calls[0] as [string, RequestInit])[1] as { body: string }).body,
+    );
+    expect(body).toMatchObject({ type: "text-edit", cxId: "cx-1", after: "Rozepsáno" });
+  });
+
+  it("povýšení s otevřenou bublinou ji zavře — komentář se nepřipne ke špatnému prvku", async () => {
+    const host = initOverlay(win);
+    dispatch(element("cx-1"), "click");
+    dispatch(host?.shadowRoot?.querySelector("[data-role='crumb-comment']") as El, "click");
+    (
+      host?.shadowRoot?.querySelector("[data-role='comment-text']") as El & { value: string }
+    ).value = "Rozepsaný návrh…";
+
+    dispatch(crumbs(host)[1] as El, "click");
+    const form = host?.shadowRoot?.querySelector("[data-role='comment']") as El;
+    expect(form.hasAttribute("hidden")).toBe(true);
+
+    dispatch(host?.shadowRoot?.querySelector("[data-role='comment-save']") as El, "click");
+    await settled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("crumb na právě editovaný prvek editaci neukončí", () => {
+    const host = initOverlay(win);
+    const section = element("cx-8");
+    dispatch(section, "click");
+    dispatch(host?.shadowRoot?.querySelector("[data-role='crumb-edit']") as El, "click");
+    expect(section.getAttribute("contenteditable")).toBeTruthy();
+
+    const current = crumbs(host).find((crumb) => crumb.getAttribute("data-current") === "true");
+    dispatch(current as El, "click");
+    expect(section.getAttribute("contenteditable")).toBeTruthy();
   });
 });
