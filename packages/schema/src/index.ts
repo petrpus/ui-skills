@@ -1,5 +1,19 @@
 export { resolveTokens } from "./resolve.ts";
 export {
+  COMMENT_CATEGORIES,
+  COMMENT_PRIORITIES,
+  type CommentCategory,
+  type CommentPriority,
+  REVIEW_SCHEMA_VERSION,
+  type Review,
+  type ReviewComment,
+  ReviewError,
+  type ReviewMeta,
+  type ReviewTarget,
+  type TextChange,
+  validateReview,
+} from "./review.ts";
+export {
   type ContrastPair,
   type DarkOverride,
   type LiteralToken,
