@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { chromium } from "playwright";
-import { capture } from "./capture.ts";
+import { capture, targetUrl } from "./capture.ts";
+import { reportClosedShadowRoots } from "./shadow-probe.ts";
 
 const USAGE = `Použití: canvas-snapshot <soubor.html> [--work-dir <adresář>]
 
@@ -19,7 +20,7 @@ export function parseArgs(argv: readonly string[]): { input: string; workDir: st
   return { input, workDir };
 }
 
-function main(): void {
+async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   if (argv.length === 0 || argv.includes("--help") || argv.includes("-h")) {
     process.stdout.write(`${USAGE}\n`);
@@ -41,6 +42,14 @@ function main(): void {
           ? `  odstraněno ${result.removedActiveParts} aktivních zbytků\n`
           : ""),
     );
+
+    // A second browser launch per capture, deliberately: the serialiser's
+    // run cannot see closed roots at all, so this is the only witness.
+    // Never fatal — the snapshot above is already delivered.
+    const warning = await reportClosedShadowRoots(targetUrl(input));
+    if (warning !== null) {
+      process.stderr.write(`${warning}\n`);
+    }
   } catch (error) {
     process.stderr.write(`✗ ${(error as Error).message}\n`);
     process.exitCode = 1;
@@ -48,5 +57,5 @@ function main(): void {
 }
 
 if (process.argv[1] !== undefined && import.meta.url === `file://${process.argv[1]}`) {
-  main();
+  void main();
 }
