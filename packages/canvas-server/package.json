@@ -1,0 +1,19 @@
+{
+  "name": "@ui-skills/canvas-server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "canvas-serve": "./src/cli.ts"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "dependencies": {
+    "@ui-skills/schema": "workspace:*",
+    "@ui-skills/snapshot": "workspace:*"
+  }
+}
