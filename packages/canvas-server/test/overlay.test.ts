@@ -235,3 +235,224 @@ describe("initOverlay", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+describe("komentáře (C + klik)", () => {
+  function holdC(): void {
+    key("keydown", { key: "c" });
+  }
+
+  function openFormOn(cxId: string) {
+    const host = initOverlay(win);
+    holdC();
+    dispatch(element(cxId), "click");
+    key("keyup", { key: "c" });
+    return host;
+  }
+
+  function part(host: ReturnType<typeof initOverlay>, role: string): El {
+    const found = host?.shadowRoot?.querySelector(`[data-role='${role}']`);
+    if (found === null || found === undefined) {
+      throw new Error(`ve stínu chybí ${role}`);
+    }
+    return found as El;
+  }
+
+  it("C + klik otevře bublinu komentáře, běžný klik ne", () => {
+    const host = initOverlay(win);
+    dispatch(element("cx-1"), "click");
+    expect(part(host, "comment").hasAttribute("hidden")).toBe(true);
+
+    holdC();
+    dispatch(element("cx-1"), "click");
+    expect(part(host, "comment").hasAttribute("hidden")).toBe(false);
+  });
+
+  it("uložení pošle komentář s cílem, kategorií i prioritou okamžitě", async () => {
+    const host = openFormOn("cx-1");
+    (part(host, "comment-text") as El & { value: string }).value = "Celý blok přepracovat.";
+    (part(host, "comment-category") as El & { value: string }).value = "idea";
+    (part(host, "comment-priority") as El & { value: string }).value = "high";
+
+    dispatch(part(host, "comment-save"), "click");
+    await settled();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/events");
+    expect(JSON.parse(options.body as string)).toEqual({
+      type: "comment",
+      cxId: "cx-1",
+      text: "Celý blok přepracovat.",
+      category: "idea",
+      priority: "high",
+    });
+    expect(part(host, "comment").hasAttribute("hidden")).toBe(true);
+  });
+
+  it("výchozí kategorie je change-request a priorita medium", async () => {
+    const host = openFormOn("cx-0");
+    (part(host, "comment-text") as El & { value: string }).value = "Menší nadpis.";
+    dispatch(part(host, "comment-save"), "click");
+    await settled();
+
+    const [, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(options.body as string)).toMatchObject({
+      category: "change-request",
+      priority: "medium",
+    });
+  });
+
+  it("prázdný text se neuloží", async () => {
+    const host = openFormOn("cx-1");
+    dispatch(part(host, "comment-save"), "click");
+    await settled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(part(host, "comment").hasAttribute("hidden")).toBe(true);
+  });
+
+  it("Zrušit rozepsaný komentář zahodí", async () => {
+    const host = openFormOn("cx-1");
+    (part(host, "comment-text") as El & { value: string }).value = "Rozepsané…";
+    dispatch(part(host, "comment-cancel"), "click");
+    await settled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(part(host, "comment").hasAttribute("hidden")).toBe(true);
+  });
+
+  it("komentář jde připnout k prvku bez jakékoli textové editace", async () => {
+    const host = openFormOn("cx-1");
+    (part(host, "comment-text") as El & { value: string }).value = "Hover stav tlačítka chybí.";
+    dispatch(part(host, "comment-save"), "click");
+    await settled();
+
+    const bodies = fetchMock.mock.calls.map((call) =>
+      JSON.parse(((call as [string, RequestInit])[1] as { body: string }).body),
+    );
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]).toMatchObject({ type: "comment", cxId: "cx-1" });
+  });
+
+  it("uložený komentář nechá na prvku viditelnou značku", async () => {
+    const host = openFormOn("cx-1");
+    (part(host, "comment-text") as El & { value: string }).value = "Značka.";
+    dispatch(part(host, "comment-save"), "click");
+    await settled();
+    expect(host?.shadowRoot?.querySelectorAll("[data-role='pin']")).toHaveLength(1);
+  });
+
+  it("psaní písmene c při editaci textu bublinu neotvírá", () => {
+    const host = initOverlay(win);
+    const heading = element("cx-0");
+    dispatch(heading, "dblclick");
+    heading.dispatchEvent(
+      new win.KeyboardEvent("keydown", { key: "c", bubbles: true, cancelable: true }),
+    );
+    dispatch(element("cx-1"), "click");
+    expect(part(host, "comment").hasAttribute("hidden")).toBe(true);
+  });
+
+  it("po uzavření review už C + klik nic neotvírá", async () => {
+    const host = initOverlay(win);
+    key("keydown", { key: "Enter", ctrlKey: true });
+    await settled();
+    fetchMock.mockClear();
+
+    holdC();
+    dispatch(element("cx-1"), "click");
+    expect(part(host, "comment").hasAttribute("hidden")).toBe(true);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("komentáře — nálezy z review", () => {
+  function holdC(): void {
+    key("keydown", { key: "c" });
+  }
+
+  function form(host: ReturnType<typeof initOverlay>): El {
+    return host?.shadowRoot?.querySelector("[data-role='comment']") as El;
+  }
+
+  it("psaní 'c' v inputu zmrazené stránky C+klik nevyzbrojí", () => {
+    const input = win.document.createElement("input");
+    win.document.body.appendChild(input);
+    const host = initOverlay(win);
+
+    input.dispatchEvent(
+      new win.KeyboardEvent("keydown", { key: "c", bubbles: true, cancelable: true }),
+    );
+    dispatch(element("cx-1"), "click");
+    expect(form(host).hasAttribute("hidden")).toBe(true);
+  });
+
+  it("Escape v bublině rozepsaný komentář zahodí", async () => {
+    const host = initOverlay(win);
+    holdC();
+    dispatch(element("cx-1"), "click");
+    const text = host?.shadowRoot?.querySelector("[data-role='comment-text']") as El & {
+      value: string;
+    };
+    text.value = "Rozepsané…";
+    text.dispatchEvent(
+      new win.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    );
+    await settled();
+    expect(form(host).hasAttribute("hidden")).toBe(true);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("uzavření s rozepsaným komentářem ho nejdřív uloží, pak zavře", async () => {
+    const host = initOverlay(win);
+    holdC();
+    dispatch(element("cx-1"), "click");
+    (
+      host?.shadowRoot?.querySelector("[data-role='comment-text']") as El & { value: string }
+    ).value = "Na poslední chvíli.";
+
+    key("keydown", { key: "Enter", ctrlKey: true });
+    await settled();
+
+    const urls = fetchMock.mock.calls.map((call) => call[0]);
+    expect(urls).toEqual(["/events", "/done"]);
+    const body = JSON.parse(
+      ((fetchMock.mock.calls[0] as [string, RequestInit])[1] as { body: string }).body,
+    );
+    expect(body).toMatchObject({ type: "comment", text: "Na poslední chvíli." });
+  });
+
+  it("editace a bublina se vylučují: dblclick rozepsaný komentář zahodí a uzavření flushne jen editaci", async () => {
+    const host = initOverlay(win);
+    holdC();
+    dispatch(element("cx-1"), "click");
+    (
+      host?.shadowRoot?.querySelector("[data-role='comment-text']") as El & { value: string }
+    ).value = "Komentář.";
+    key("keyup", { key: "c" });
+
+    const heading = element("cx-0");
+    dispatch(heading, "dblclick");
+    expect(form(host).hasAttribute("hidden")).toBe(true);
+    heading.textContent = "Rozepsáno";
+
+    key("keydown", { key: "Enter", ctrlKey: true });
+    await settled();
+
+    const urls = fetchMock.mock.calls.map((call) => call[0]);
+    expect(urls).toEqual(["/events", "/done"]);
+    const body = JSON.parse(
+      ((fetchMock.mock.calls[0] as [string, RequestInit])[1] as { body: string }).body,
+    );
+    expect(body).toMatchObject({ type: "text-edit", after: "Rozepsáno" });
+  });
+
+  it("syntetický dblclick zavře otevřenou bublinu", () => {
+    const host = initOverlay(win);
+    holdC();
+    dispatch(element("cx-1"), "click");
+    key("keyup", { key: "c" });
+    expect(form(host).hasAttribute("hidden")).toBe(false);
+
+    dispatch(element("cx-0"), "dblclick");
+    expect(form(host).hasAttribute("hidden")).toBe(true);
+  });
+});
