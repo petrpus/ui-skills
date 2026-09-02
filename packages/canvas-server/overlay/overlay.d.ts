@@ -8,3 +8,18 @@ import type { DOMWindow } from "jsdom";
 type OverlayHost = ReturnType<DOMWindow["document"]["createElement"]>;
 
 export function initOverlay(win: DOMWindow): OverlayHost | null;
+
+export interface ClampAnchor {
+  readonly top: number;
+  readonly bottom: number;
+  readonly left: number;
+}
+export interface ClampSize {
+  readonly width: number;
+  readonly height: number;
+}
+export function clampPosition(
+  anchor: ClampAnchor,
+  size: ClampSize,
+  viewport: ClampSize,
+): { top: number; left: number };

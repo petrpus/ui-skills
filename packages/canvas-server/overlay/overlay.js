@@ -61,9 +61,14 @@ const STYLES = `
     color: #f9fafb;
     font-size: 13px;
     pointer-events: auto;
-    /* A deep chain scrolls inside the bar instead of wrapping over the page. */
+  }
+  [data-role="crumbs"] {
+    /* A deep chain scrolls inside its own region — the ✎/💬 actions must
+       stay pinned, not ride away with the path. */
     overflow-x: auto;
     white-space: nowrap;
+    flex: 1;
+    min-width: 0;
   }
   [data-role="breadcrumb"] button {
     border: none;
@@ -152,12 +157,17 @@ const STYLES = `
     bottom: 16px;
     transform: translateX(-50%);
     max-width: 80vw;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    pointer-events: auto;
+  }
+  [data-role="toast-message"] {
     padding: 10px 16px;
     border-radius: 8px;
     background: #111827;
     color: #f9fafb;
     font-size: 13px;
-    pointer-events: auto;
   }
   [hidden] {
     display: none;
@@ -199,6 +209,28 @@ const MARKUP = `
   </div>
   <div data-role="toast" hidden></div>
 `;
+
+/**
+ * Where a box of `size` should sit relative to its anchor so it stays inside
+ * the viewport: below the anchor by default, flipped above when the bottom
+ * would clip, pulled inside at the horizontal edges. Pure, because clipping
+ * bugs are exactly the kind jsdom cannot render and a unit test can.
+ */
+export function clampPosition(anchor, size, viewport) {
+  const margin = 8;
+  const left = Math.min(
+    Math.max(anchor.left, margin),
+    Math.max(margin, viewport.width - size.width - margin),
+  );
+
+  let top = anchor.bottom + margin;
+  if (top + size.height > viewport.height - margin) {
+    const above = anchor.top - size.height - margin;
+    top = above >= margin ? above : Math.max(margin, viewport.height - size.height - margin);
+  }
+
+  return { top, left };
+}
 
 /**
  * Boots the overlay into a window. Returns the host element, or null when an
@@ -272,9 +304,25 @@ export function initOverlay(win) {
     return target.closest("[data-cx-id]");
   }
 
-  function say(message) {
-    toast.textContent = message;
+  /**
+   * Messages stack instead of sharing one slot: an error about a lost event
+   * must survive the success toast that lands right after it. Transient
+   * notes clear themselves; the review's final word stays.
+   */
+  function say(message, sticky = false) {
+    const note = doc.createElement("div");
+    note.setAttribute("data-role", "toast-message");
+    note.textContent = message;
+    toast.appendChild(note);
     toast.removeAttribute("hidden");
+    if (!sticky) {
+      win.setTimeout(() => {
+        note.remove();
+        if (toast.childElementCount === 0) {
+          toast.setAttribute("hidden", "");
+        }
+      }, 8000);
+    }
   }
 
   /**
@@ -462,10 +510,17 @@ export function initOverlay(win) {
     commentText.value = "";
     commentCategory.value = "change-request";
     commentPriority.value = "medium";
-    const rect = element.getBoundingClientRect();
-    commentForm.style.top = `${rect.bottom + 8}px`;
-    commentForm.style.left = `${rect.left}px`;
+    // Shown before measuring — a hidden element has no size to clamp with.
     commentForm.removeAttribute("hidden");
+    const measured = commentForm.getBoundingClientRect();
+    const { top, left } = clampPosition(
+      element.getBoundingClientRect(),
+      // jsdom measures zero; the CSS width and a typical height stand in.
+      { width: measured.width || 280, height: measured.height || 180 },
+      { width: win.innerWidth, height: win.innerHeight },
+    );
+    commentForm.style.top = `${top}px`;
+    commentForm.style.left = `${left}px`;
     commentText.focus();
   }
 
@@ -493,6 +548,11 @@ export function initOverlay(win) {
     if (closed) {
       return;
     }
+    // The button goes visibly busy for the whole close: on a slow network an
+    // unresponsive-looking "Hotovo" invites a second click that the closed
+    // flag would swallow silently.
+    doneButton.setAttribute("disabled", "");
+    doneButton.textContent = "Ukládám…";
     // Flush, don't discard: an open edit or comment draft is committed
     // first, and then every event POST still in the air is awaited — the
     // "Uložit" button's send is already detached from any draft state, and
@@ -511,9 +571,11 @@ export function initOverlay(win) {
       if (!response.ok) {
         throw new Error(result.error ?? "server vrátil chybu");
       }
-      say(`✓ review: ${result.reviewPath} — okno můžete zavřít`);
+      say(`✓ review: ${result.reviewPath} — okno můžete zavřít`, true);
     } catch (error) {
-      say(`⚠ review se nesložilo: ${error.message}`);
+      say(`⚠ review se nesložilo: ${error.message}`, true);
+    } finally {
+      doneButton.textContent = "Hotovo";
     }
   }
 
