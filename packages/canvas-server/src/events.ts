@@ -25,7 +25,29 @@ export interface CommentEvent {
   readonly at?: string;
 }
 
-export type CanvasEvent = TextEditEvent | CommentEvent;
+export interface SubtreeInfo {
+  readonly tag: string;
+  readonly elements: number;
+  readonly textFingerprint: string;
+}
+
+/** hide is a hypothesis, remove an instruction — two events, not a flag. */
+export interface HideEvent {
+  readonly type: "hide";
+  readonly cxId: string;
+  /** Captured by the overlay before the action — afterwards it is gone. */
+  readonly subtree: SubtreeInfo;
+  readonly at?: string;
+}
+
+export interface RemoveEvent {
+  readonly type: "remove";
+  readonly cxId: string;
+  readonly subtree: SubtreeInfo;
+  readonly at?: string;
+}
+
+export type CanvasEvent = TextEditEvent | CommentEvent | HideEvent | RemoveEvent;
 
 export interface ParsedEventLog {
   readonly events: readonly CanvasEvent[];
@@ -60,6 +82,29 @@ function toEvent(raw: Record<string, unknown>): CanvasEvent | null {
     return { type, cxId, before, after, ...(at === undefined ? {} : { at }) };
   }
 
+  if (type === "hide" || type === "remove") {
+    const subtree = raw.subtree;
+    if (
+      !isRecord(subtree) ||
+      typeof subtree.tag !== "string" ||
+      typeof subtree.elements !== "number" ||
+      typeof subtree.textFingerprint !== "string"
+    ) {
+      return null;
+    }
+    const at = optionalString(raw.at);
+    return {
+      type,
+      cxId,
+      subtree: {
+        tag: subtree.tag,
+        elements: subtree.elements,
+        textFingerprint: subtree.textFingerprint,
+      },
+      ...(at === undefined ? {} : { at }),
+    };
+  }
+
   if (type === "comment") {
     const text = raw.text;
     if (typeof text !== "string" || text.trim() === "") {
@@ -81,7 +126,7 @@ function toEvent(raw: Record<string, unknown>): CanvasEvent | null {
   return null;
 }
 
-const KNOWN_TYPES = new Set(["text-edit", "comment"]);
+const KNOWN_TYPES = new Set(["text-edit", "comment", "hide", "remove"]);
 
 /** Reads a JSONL event log leniently: what cannot be read is a warning, not a crash. */
 export function parseEventLog(raw: string): ParsedEventLog {

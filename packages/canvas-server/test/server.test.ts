@@ -151,8 +151,9 @@ describe("serveSession", () => {
 
     const review = validateReview(JSON.parse(readFileSync(body.reviewPath, "utf8")));
     expect(review.changes).toHaveLength(1);
-    expect(review.changes[0]?.before).toBe("Naše služby");
-    expect(review.changes[0]?.after).toBe("Co umíme");
+    const change = review.changes[0];
+    expect(change !== undefined && "before" in change ? change.before : "").toBe("Naše služby");
+    expect(change !== undefined && "after" in change ? change.after : "").toBe("Co umíme");
     expect(review.changes[0]?.target.selector).toContain("h1");
 
     expect(readFileSync(body.markdownPath, "utf8")).toContain("chg_001");

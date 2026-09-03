@@ -1,4 +1,4 @@
-import type { Review, ReviewComment, TextChange } from "@ui-skills/schema";
+import type { Review, ReviewChange, ReviewComment, TextChange } from "@ui-skills/schema";
 import { type Candidate, mapTarget, type SourceFile } from "./map.ts";
 
 export type ApplyStatus = "applied" | "needs-input" | "skipped";
@@ -140,7 +140,47 @@ export function applyReview(review: Review, files: readonly SourceFile[]): Apply
     return apply(change, { ...hinted, offset: nearest, line: lineOf(content, nearest) });
   }
 
+  /**
+   * Anything but a direct text edit is never applied automatically. Hide is
+   * a hypothesis and remove an instruction whose blast radius belongs to
+   * the agent's plan; an unknown type is a newer editor talking to an older
+   * apply — one skipped change, never a crash.
+   */
+  function nonTextRow(change: Exclude<ReviewChange, TextChange>): AppliedChange {
+    if (!("subtree" in change)) {
+      return {
+        id: change.id,
+        status: "skipped",
+        note: `neznámý typ změny "${change.type}" — přeskočeno (novější editor než apply)`,
+      };
+    }
+    const mapping = mapTarget(change.target, change.target.textFingerprint ?? "", currentFiles());
+    const [first] = mapping.candidates;
+    const location =
+      mapping.candidates.length === 1 && first !== undefined ? locate(first) : undefined;
+    const scope = `<${change.subtree.tag}>, ${change.subtree.elements} prvků`;
+    const note =
+      change.type === "hide"
+        ? `hypotéza „skrýt" (${scope}) — otázka do plánu, automaticky se needituje`
+        : `pokyn „smazat" (${scope}) — rozsah ve zdrojích provede agent${
+            location === undefined && mapping.reason !== undefined ? `; ${mapping.reason}` : ""
+          }`;
+    return {
+      id: change.id,
+      status: "needs-input",
+      ...(location === undefined ? {} : { location }),
+      note,
+    };
+  }
+
   for (const change of review.changes) {
+    // Structural, not by type string: UnknownChange's `type` is an open
+    // string, so only the presence of `before` proves a direct text edit.
+    if (!("before" in change)) {
+      changes.push(nonTextRow(change));
+      continue;
+    }
+
     if (change.before === "") {
       // Insertion has no anchor to replace: splicing `after` at the
       // fingerprint's offset would put it at an arbitrary spot inside the

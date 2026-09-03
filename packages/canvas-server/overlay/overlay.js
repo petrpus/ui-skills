@@ -186,6 +186,8 @@ const MARKUP = `
     <span class="actions">
       <button type="button" data-role="crumb-edit" title="Upravit text výběru">✎ text</button>
       <button type="button" data-role="crumb-comment" title="Komentovat výběr">💬 komentář</button>
+      <button type="button" data-role="crumb-hide" title="Skrýt výběr — hypotéza, co kdyby tu nebyl">🙈 skrýt</button>
+      <button type="button" data-role="crumb-remove" title="Smazat výběr — pokyn k odstranění">🗑 smazat</button>
     </span>
   </div>
   <div data-role="comment" hidden>
@@ -661,6 +663,51 @@ export function initOverlay(win) {
       event.stopPropagation();
       closeCommentForm();
     }
+  });
+
+  /**
+   * Captured BEFORE the action mutates or removes the element — afterwards
+   * there is nothing left to describe. Same fingerprint rules as the
+   * instrumenter: whitespace collapsed, 120 chars.
+   */
+  function subtreeOf(element) {
+    return {
+      tag: element.localName,
+      elements: element.querySelectorAll("*").length + 1,
+      textFingerprint: (element.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 120),
+    };
+  }
+
+  function hideSelected() {
+    if (selected === null || closed) {
+      return;
+    }
+    const element = selected;
+    send({ type: "hide", cxId: element.getAttribute("data-cx-id"), subtree: subtreeOf(element) });
+    // display:none, not removal: a hypothesis stays reversible on the page.
+    element.style.display = "none";
+    // The element now measures 0x0 at the origin — an outline there is a
+    // stray mark, so the box hides while the selection (breadcrumb, actions)
+    // stays on the hidden element.
+    place(selectBox, null);
+    updateBreadcrumb();
+  }
+
+  function removeSelected() {
+    if (selected === null || closed) {
+      return;
+    }
+    const element = selected;
+    send({ type: "remove", cxId: element.getAttribute("data-cx-id"), subtree: subtreeOf(element) });
+    element.remove();
+    select(null);
+  }
+
+  shadow.querySelector("[data-role='crumb-hide']").addEventListener("click", () => {
+    hideSelected();
+  });
+  shadow.querySelector("[data-role='crumb-remove']").addEventListener("click", () => {
+    removeSelected();
   });
 
   shadow.querySelector("[data-role='crumb-edit']").addEventListener("click", () => {

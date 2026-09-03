@@ -4,13 +4,18 @@ export {
   COMMENT_PRIORITIES,
   type CommentCategory,
   type CommentPriority,
+  type HideChange,
   REVIEW_SCHEMA_VERSION,
+  type RemoveChange,
   type Review,
+  type ReviewChange,
   type ReviewComment,
   ReviewError,
   type ReviewMeta,
   type ReviewTarget,
+  type SubtreeDescription,
   type TextChange,
+  type UnknownChange,
   validateReview,
 } from "./review.ts";
 export {
