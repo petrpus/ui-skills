@@ -80,21 +80,38 @@ it("smyčka drží: server → výběr → editace → komentář → Hotovo →
   // one place that guarantee runs against a real server.
   await page.locator("[data-role='comment-save']").click();
 
+  // Remove a block via the selection bar: click selects, the bar's action
+  // sends the instruction with the subtree description.
+  const doomed = page.locator("h2[data-cx-id]").first();
+  const doomedText = ((await doomed.textContent()) ?? "").replace(/\s+/g, " ").trim();
+  await doomed.click();
+  await page.locator("[data-role='crumb-remove']").click();
+
   // Hotovo compiles the log and shuts the server down.
   await page.locator("button[data-role='done']").click();
   const result = await server.done;
 
   const review = validateReview(JSON.parse(readFileSync(result.reviewPath, "utf8")));
 
-  const change = review.changes.find((candidate) => candidate.after === EDITED_TEXT);
+  const change = review.changes.find(
+    (candidate) => "after" in candidate && candidate.after === EDITED_TEXT,
+  );
   expect(change).toBeDefined();
-  expect(change?.before).toBe(originalText);
+  expect(change !== undefined && "before" in change ? change.before : "").toBe(originalText);
   expect(change?.target.selector).toContain("h1");
 
   const comment = review.comments.find((candidate) => candidate.text === COMMENT_TEXT);
   expect(comment).toBeDefined();
   expect(comment?.category).toBe("idea");
   expect(comment?.target.cxId).toMatch(/^cx-\d+$/);
+
+  const removal = review.changes.find((candidate) => candidate.type === "remove");
+  expect(removal).toBeDefined();
+  expect(removal !== undefined && "subtree" in removal).toBe(true);
+  if (removal !== undefined && "subtree" in removal) {
+    expect(removal.subtree.tag).toBe("h2");
+    expect(removal.subtree.textFingerprint).toBe(doomedText.slice(0, 120));
+  }
 
   await page.close();
 });

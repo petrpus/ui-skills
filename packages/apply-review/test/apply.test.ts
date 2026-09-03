@@ -159,3 +159,60 @@ describe("applyReview — nálezy z review", () => {
     expect(result.updates.size).toBe(0);
   });
 });
+
+describe("blokové změny a neznámé typy (#57)", () => {
+  const subtree = { tag: "section", elements: 4, textFingerprint: "Naše služby" };
+
+  it("hide končí jako podklad pro plán, ne editace", () => {
+    const result = applyReview(
+      review({
+        changes: [
+          {
+            id: "chg_001",
+            target: { cxId: "cx-1", textFingerprint: "Naše služby" },
+            type: "hide",
+            subtree,
+          },
+        ],
+      }),
+      [component],
+    );
+    expect(result.changes[0]).toMatchObject({ status: "needs-input" });
+    expect(result.changes[0]?.note).toMatch(/hypotéza/);
+    expect(result.updates.size).toBe(0);
+  });
+
+  it("remove se namapuje a nese rozsah — provádí agent, ne CLI", () => {
+    const result = applyReview(
+      review({
+        changes: [
+          {
+            id: "chg_001",
+            target: { cxId: "cx-1", textFingerprint: "Naše služby" },
+            type: "remove",
+            subtree,
+          },
+        ],
+      }),
+      [component],
+    );
+    expect(result.changes[0]).toMatchObject({
+      status: "needs-input",
+      location: "src/Services.tsx:1",
+    });
+    expect(result.changes[0]?.note).toMatch(/4 prvků/);
+    expect(result.updates.size).toBe(0);
+  });
+
+  it("neznámý typ skončí jako skipped s poznámkou, nespadne", () => {
+    const result = applyReview(
+      review({
+        changes: [{ id: "chg_001", target: { cxId: "cx-9" }, type: "style", raw: { props: {} } }],
+      }),
+      [component],
+    );
+    expect(result.changes[0]).toMatchObject({ status: "skipped" });
+    expect(result.changes[0]?.note).toMatch(/neznámý typ/);
+    expect(result.ratio.skipped).toBe(1);
+  });
+});

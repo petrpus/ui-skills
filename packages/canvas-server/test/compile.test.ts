@@ -35,8 +35,8 @@ describe("compileReview", () => {
     expect(review.changes).toHaveLength(1);
     const change = review.changes[0];
     expect(change?.id).toBe("chg_001");
-    expect(change?.before).toBe("Naše služby");
-    expect(change?.after).toBe("Služby");
+    expect(change !== undefined && "before" in change ? change.before : "").toBe("Naše služby");
+    expect(change !== undefined && "after" in change ? change.after : "").toBe("Služby");
     expect(change?.target.selector).toContain("h1");
     expect(change?.target.xpath).toBe("/html[1]/body[1]/h1[1]");
     expect(change?.target.textFingerprint).toBe("Naše služby");
@@ -48,8 +48,9 @@ describe("compileReview", () => {
       map,
     );
     expect(review.changes).toHaveLength(1);
-    expect(review.changes[0]?.before).toBe("Naše služby");
-    expect(review.changes[0]?.after).toBe("Co umíme");
+    const merged = review.changes[0];
+    expect(merged !== undefined && "before" in merged ? merged.before : "").toBe("Naše služby");
+    expect(merged !== undefined && "after" in merged ? merged.after : "").toBe("Co umíme");
   });
 
   it("editace vrácená na původní hodnotu se do výstupu nedostane", () => {
@@ -132,5 +133,85 @@ describe("renderReviewMarkdown", () => {
     const markdown = renderReviewMarkdown(compileReview([], map));
     expect(markdown).toContain("# Review");
     expect(markdown).toMatch(/[Žž]ádné/);
+  });
+});
+
+describe("blokové změny (#57)", () => {
+  const subtree = { tag: "section", elements: 5, textFingerprint: "Sekce s kartami" };
+
+  it("hide a remove projdou do výstupu se správným targetem a podstromem", () => {
+    const review = compileReview(
+      [
+        { type: "hide", cxId: "cx-1", subtree },
+        { type: "remove", cxId: "cx-2", subtree },
+      ],
+      map,
+    );
+    expect(review.changes).toHaveLength(2);
+    expect(review.changes[0]).toMatchObject({ type: "hide", target: { cxId: "cx-1" } });
+    expect(review.changes[1]).toMatchObject({
+      type: "remove",
+      subtree: { tag: "section", elements: 5 },
+    });
+    expect(() => validateReview(review)).not.toThrow();
+  });
+
+  it("remove téhož prvku vytlačí dřívější hide i textovou editaci", () => {
+    const review = compileReview(
+      [
+        edit("cx-1", "Odstavec", "Věta"),
+        { type: "hide", cxId: "cx-1", subtree },
+        { type: "remove", cxId: "cx-1", subtree },
+      ],
+      map,
+    );
+    expect(review.changes).toHaveLength(1);
+    expect(review.changes[0]?.type).toBe("remove");
+  });
+
+  it("dvojí remove téhož prvku je jedna změna", () => {
+    const review = compileReview(
+      [
+        { type: "remove", cxId: "cx-1", subtree },
+        { type: "remove", cxId: "cx-1", subtree },
+      ],
+      map,
+    );
+    expect(review.changes).toHaveLength(1);
+  });
+
+  it("review.md rozliší hypotézu od pokynu", () => {
+    const markdown = renderReviewMarkdown(
+      compileReview(
+        [
+          { type: "hide", cxId: "cx-1", subtree },
+          { type: "remove", cxId: "cx-2", subtree },
+        ],
+        map,
+      ),
+    );
+    expect(markdown).toMatch(/skrýt|hypotéza/i);
+    expect(markdown).toMatch(/smazat|odstranit/i);
+    expect(markdown).toContain("5 prvků");
+  });
+});
+
+describe("skládání hide + edit (#57 review)", () => {
+  const subtree = { tag: "p", elements: 1, textFingerprint: "Odstavec" };
+
+  it("hide a editace téhož prvku dají dvě změny — edit před blokem, ids drží pořadí", () => {
+    const review = compileReview(
+      [
+        edit("cx-1", "Odstavec", "Věta"),
+        { type: "hide", cxId: "cx-1", subtree },
+        edit("cx-2", "Naše služby", "Služby"),
+      ],
+      map,
+    );
+    expect(review.changes.map((change) => [change.id, change.type, change.target.cxId])).toEqual([
+      ["chg_001", "text", "cx-1"],
+      ["chg_002", "hide", "cx-1"],
+      ["chg_003", "text", "cx-2"],
+    ]);
   });
 });

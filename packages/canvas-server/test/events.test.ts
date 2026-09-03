@@ -70,3 +70,25 @@ describe("parseEventLog", () => {
     expect(warnings).toEqual([]);
   });
 });
+
+describe("blokové události (#57)", () => {
+  const subtree = { tag: "section", elements: 3, textFingerprint: "Obsah" };
+
+  it("hide a remove se přečtou včetně podstromu", () => {
+    const raw = log(
+      { type: "hide", cxId: "cx-1", subtree },
+      { type: "remove", cxId: "cx-2", subtree },
+    );
+    const { events, warnings } = parseEventLog(raw);
+    expect(events).toHaveLength(2);
+    expect(events[0]).toMatchObject({ type: "hide", cxId: "cx-1" });
+    expect(events[1]).toMatchObject({ type: "remove", subtree: { elements: 3 } });
+    expect(warnings).toEqual([]);
+  });
+
+  it("bloková událost bez podstromu se přeskočí s varováním", () => {
+    const { events, warnings } = parseEventLog(log({ type: "remove", cxId: "cx-1" }));
+    expect(events).toEqual([]);
+    expect(warnings).toHaveLength(1);
+  });
+});

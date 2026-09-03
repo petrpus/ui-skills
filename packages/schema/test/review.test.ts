@@ -34,7 +34,8 @@ describe("validateReview", () => {
   it("přijme platný dokument", () => {
     const review = validateReview(validDocument());
     expect(review.changes).toHaveLength(1);
-    expect(review.changes[0]?.after).toBe("Co pro vás uděláme");
+    const first = review.changes[0];
+    expect(first !== undefined && "after" in first ? first.after : "").toBe("Co pro vás uděláme");
     expect(review.comments[0]?.category).toBe("change-request");
   });
 
@@ -61,10 +62,10 @@ describe("validateReview", () => {
     );
   });
 
-  it("odmítne neznámý typ změny", () => {
+  it("odmítne změnu bez typu — dopředná kompatibilita neznamená beztvarost", () => {
     const doc = validDocument();
-    doc.changes = [{ ...change, type: "style" }];
-    expect(() => validateReview(doc)).toThrow(/typ/);
+    doc.changes = [{ id: "chg_001", target: { cxId: "cx-1" }, before: "a", after: "b" }];
+    expect(() => validateReview(doc)).toThrow(/type/);
   });
 
   it("odmítne změnu bez before/after", () => {
@@ -112,5 +113,81 @@ describe("validateReview", () => {
     } catch (error) {
       expect((error as ReviewError).path).toBe("comments[0]");
     }
+  });
+});
+
+describe("blokové změny a dopředná kompatibilita (#57)", () => {
+  const subtree = { tag: "section", elements: 12, textFingerprint: "Naše služby Popis" };
+
+  it("hide a remove nesou popis podstromu", () => {
+    const review = validateReview({
+      schemaVersion: REVIEW_SCHEMA_VERSION,
+      changes: [
+        { id: "chg_001", target: { cxId: "cx-1" }, type: "hide", subtree },
+        { id: "chg_002", target: { cxId: "cx-2" }, type: "remove", subtree },
+      ],
+      comments: [],
+    });
+    expect(review.changes).toHaveLength(2);
+    const removal = review.changes[1];
+    expect(removal?.type).toBe("remove");
+    expect(removal !== undefined && "subtree" in removal ? removal.subtree.elements : 0).toBe(12);
+  });
+
+  it("remove bez podstromu se odmítne — agent potřebuje rozsah", () => {
+    expect(() =>
+      validateReview({
+        schemaVersion: REVIEW_SCHEMA_VERSION,
+        changes: [{ id: "chg_001", target: { cxId: "cx-1" }, type: "remove" }],
+        comments: [],
+      }),
+    ).toThrow(/subtree/);
+  });
+
+  it("podstrom s nesmyslným počtem prvků se odmítne", () => {
+    expect(() =>
+      validateReview({
+        schemaVersion: REVIEW_SCHEMA_VERSION,
+        changes: [
+          {
+            id: "chg_001",
+            target: { cxId: "cx-1" },
+            type: "hide",
+            subtree: { tag: "div", elements: -1, textFingerprint: "" },
+          },
+        ],
+        comments: [],
+      }),
+    ).toThrow(/elements/);
+  });
+
+  it("neznámý typ změny projde jako unknown se zachovanými daty — apply ho přeskočí, nespadne", () => {
+    const review = validateReview({
+      schemaVersion: REVIEW_SCHEMA_VERSION,
+      changes: [
+        {
+          id: "chg_001",
+          target: { cxId: "cx-1" },
+          type: "style",
+          props: { color: { before: "#fff", after: "#000" } },
+        },
+      ],
+      comments: [],
+    });
+    const change = review.changes[0];
+    expect(change?.type).toBe("style");
+    expect(
+      change && "raw" in change ? (change.raw as { props?: unknown }).props : undefined,
+    ).toBeDefined();
+  });
+
+  it("neznámý typ pořád vyžaduje id a target s cxId", () => {
+    expect(() =>
+      validateReview({
+        schemaVersion: REVIEW_SCHEMA_VERSION,
+        changes: [{ id: "chg_001", type: "style" }],
+        comments: [],
+      }),
+    ).toThrow(ReviewError);
   });
 });

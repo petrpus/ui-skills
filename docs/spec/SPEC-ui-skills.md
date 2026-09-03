@@ -113,7 +113,8 @@ Desktop-only interakční model (viz ne-cíle): hover, modifikátory, klávesov�
       "offSystem": false,
       "viewport": "mobile"
     },
-    { "id": "chg_003", "target": { "…": "…" }, "type": "remove" }
+    { "id": "chg_003", "target": { "…": "…" }, "type": "remove",
+      "subtree": { "tag": "section", "elements": 12, "textFingerprint": "…" } }
   ],
   "comments": [
     { "id": "cmt_001", "target": { "…": "…" }, "category": "change-request",

@@ -23,7 +23,6 @@ export interface ReviewTarget {
   readonly sourceHint?: string;
 }
 
-/** Phase 0 knows direct edits of text only; styles and removals come later. */
 export interface TextChange {
   readonly id: string;
   readonly target: ReviewTarget;
@@ -31,6 +30,50 @@ export interface TextChange {
   readonly before: string;
   readonly after: string;
 }
+
+/**
+ * What a hidden or removed element took with it. The target names the root;
+ * the agent needs the extent — deleting one element can mean deleting a
+ * component and its call site, and a review must say how big the hole is.
+ */
+export interface SubtreeDescription {
+  readonly tag: string;
+  /** Elements in the subtree, the root included. */
+  readonly elements: number;
+  readonly textFingerprint: string;
+}
+
+/** A hypothesis — "what if this were not here?" — the agent reads as a question. */
+export interface HideChange {
+  readonly id: string;
+  readonly target: ReviewTarget;
+  readonly type: "hide";
+  readonly subtree: SubtreeDescription;
+}
+
+/** An instruction: take it out of the source. */
+export interface RemoveChange {
+  readonly id: string;
+  readonly target: ReviewTarget;
+  readonly type: "remove";
+  readonly subtree: SubtreeDescription;
+}
+
+/**
+ * Forward compatibility: a type this version does not know still parses —
+ * id and target are demanded, the rest rides along raw. The apply step
+ * reports such a change as skipped with a note; a reader a version behind
+ * the writer must lose one change, not the whole review (schemaVersion
+ * moves only on breaking changes).
+ */
+export interface UnknownChange {
+  readonly id: string;
+  readonly target: ReviewTarget;
+  readonly type: string;
+  readonly raw: Readonly<Record<string, unknown>>;
+}
+
+export type ReviewChange = TextChange | HideChange | RemoveChange | UnknownChange;
 
 export const COMMENT_CATEGORIES = ["change-request", "question", "idea"] as const;
 export type CommentCategory = (typeof COMMENT_CATEGORIES)[number];
@@ -55,7 +98,7 @@ export interface ReviewMeta {
 export interface Review {
   readonly schemaVersion: number;
   readonly meta?: ReviewMeta;
-  readonly changes: readonly TextChange[];
+  readonly changes: readonly ReviewChange[];
   readonly comments: readonly ReviewComment[];
 }
 
@@ -123,26 +166,56 @@ function validateTarget(raw: unknown, path: string): ReviewTarget {
   return target;
 }
 
-function validateChange(raw: unknown, path: string): TextChange {
+function validateSubtree(raw: unknown, path: string): SubtreeDescription {
+  if (!isRecord(raw)) {
+    throw new ReviewError('chybí povinné pole "subtree" — agent potřebuje znát rozsah', path);
+  }
+  const { tag, elements, textFingerprint } = raw;
+  if (typeof tag !== "string" || tag === "") {
+    throw new ReviewError('"subtree.tag" musí být neprázdný řetězec', path);
+  }
+  if (typeof elements !== "number" || !Number.isInteger(elements) || elements < 1) {
+    throw new ReviewError('"subtree.elements" musí být celé číslo >= 1', path);
+  }
+  if (typeof textFingerprint !== "string") {
+    throw new ReviewError('"subtree.textFingerprint" musí být řetězec', path);
+  }
+  return { tag, elements, textFingerprint };
+}
+
+function validateChange(raw: unknown, path: string): ReviewChange {
   if (!isRecord(raw)) {
     throw new ReviewError("změna musí být objekt", path);
   }
-  if (raw.type !== "text") {
-    throw new ReviewError(
-      `neznámý typ změny ${JSON.stringify(raw.type)} (tato verze umí: "text")`,
-      path,
-    );
+  if (typeof raw.type !== "string" || raw.type === "") {
+    throw new ReviewError('chybí povinné pole "type"', path);
   }
 
-  return {
-    id: requireString(raw.id, "id", path),
-    target: validateTarget(raw.target, path),
-    type: "text",
-    // Empty is legal on both sides: text may be added to an empty element or
-    // deleted entirely. What cannot happen is the field missing altogether.
-    before: typeof raw.before === "string" ? raw.before : missing("before", path),
-    after: typeof raw.after === "string" ? raw.after : missing("after", path),
-  };
+  const id = requireString(raw.id, "id", path);
+  const target = validateTarget(raw.target, path);
+
+  if (raw.type === "text") {
+    return {
+      id,
+      target,
+      type: "text",
+      // Empty is legal on both sides: text may be added to an empty element
+      // or deleted entirely. What cannot happen is the field missing.
+      before: typeof raw.before === "string" ? raw.before : missing("before", path),
+      after: typeof raw.after === "string" ? raw.after : missing("after", path),
+    };
+  }
+
+  if (raw.type === "hide") {
+    return { id, target, type: "hide", subtree: validateSubtree(raw.subtree, path) };
+  }
+  if (raw.type === "remove") {
+    return { id, target, type: "remove", subtree: validateSubtree(raw.subtree, path) };
+  }
+
+  // Unknown on purpose, not rejected: see UnknownChange.
+  const { id: _id, target: _target, type: _type, ...rest } = raw;
+  return { id, target, type: raw.type, raw: rest };
 }
 
 function missing(what: string, path: string): never {
@@ -231,8 +304,10 @@ function validateSchemaVersion(raw: Record<string, unknown>): void {
 
 /**
  * Turns an untrusted `review.json` document into `Review`, or explains why it
- * cannot. Never guesses — an unknown schemaVersion or change type is rejected
- * outright, because the apply step edits source files on the strength of it.
+ * cannot. An unknown schemaVersion is rejected outright — the apply step
+ * edits source files on the strength of this document. An unknown change
+ * *type* is the one deliberate exception: it parses as UnknownChange (see
+ * above) so a newer editor costs one skipped change, not the whole review.
  */
 export function validateReview(raw: unknown): Review {
   if (!isRecord(raw)) {

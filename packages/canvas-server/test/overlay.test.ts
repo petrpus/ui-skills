@@ -898,3 +898,66 @@ describe("UX overlay (#44)", () => {
     expect(toast.textContent).toContain("/tmp/r");
   });
 });
+
+describe("skrýt a smazat (#57)", () => {
+  function bar(host: ReturnType<typeof initOverlay>, role: string): El {
+    return host?.shadowRoot?.querySelector(`[data-role='${role}']`) as El;
+  }
+
+  it("Skrýt element zneviditelní a pošle hide s podstromem hned", async () => {
+    const host = initOverlay(win);
+    dispatch(element("cx-8"), "click");
+    dispatch(bar(host, "crumb-hide"), "click");
+    await settled();
+
+    const section = element("cx-8");
+    expect(section.style.display).toBe("none");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const body = JSON.parse((fetchMock.mock.calls[0] as [string, RequestInit])[1].body as string);
+    expect(body).toMatchObject({
+      type: "hide",
+      cxId: "cx-8",
+      subtree: { tag: "section", elements: 3 },
+    });
+    expect(body.subtree.textFingerprint).toContain("Naše služby");
+  });
+
+  it("Smazat element odstraní z DOM a pošle remove s podstromem", async () => {
+    const host = initOverlay(win);
+    dispatch(element("cx-0"), "click");
+    dispatch(bar(host, "crumb-remove"), "click");
+    await settled();
+
+    expect(win.document.querySelector('[data-cx-id="cx-0"]')).toBeNull();
+    const body = JSON.parse((fetchMock.mock.calls[0] as [string, RequestInit])[1].body as string);
+    expect(body).toMatchObject({
+      type: "remove",
+      cxId: "cx-0",
+      subtree: { tag: "h1", elements: 1 },
+    });
+  });
+
+  it("po smazání zmizí výběr i breadcrumb", async () => {
+    const host = initOverlay(win);
+    dispatch(element("cx-0"), "click");
+    dispatch(bar(host, "crumb-remove"), "click");
+    await settled();
+
+    expect(bar(host, "select").hasAttribute("hidden")).toBe(true);
+    expect(bar(host, "breadcrumb").hasAttribute("hidden")).toBe(true);
+  });
+
+  it("po uzavření review akce nic neposílají", async () => {
+    const host = initOverlay(win);
+    dispatch(element("cx-0"), "click");
+    key("keydown", { key: "Enter", ctrlKey: true });
+    await settled();
+    fetchMock.mockClear();
+
+    dispatch(bar(host, "crumb-hide"), "click");
+    dispatch(bar(host, "crumb-remove"), "click");
+    await settled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(win.document.querySelector('[data-cx-id="cx-0"]')).not.toBeNull();
+  });
+});

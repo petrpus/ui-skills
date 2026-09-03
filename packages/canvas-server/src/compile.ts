@@ -5,13 +5,13 @@ import {
   type CommentPriority,
   REVIEW_SCHEMA_VERSION,
   type Review,
+  type ReviewChange,
   type ReviewComment,
   type ReviewMeta,
   type ReviewTarget,
-  type TextChange,
 } from "@ui-skills/schema";
 import type { LocationMap } from "@ui-skills/snapshot";
-import type { CanvasEvent } from "./events.ts";
+import type { CanvasEvent, SubtreeInfo } from "./events.ts";
 
 export interface CompileOptions {
   readonly meta?: Omit<ReviewMeta, "compiledAt">;
@@ -43,9 +43,9 @@ function commentId(ordinal: number): string {
   return `cmt_${String(ordinal).padStart(3, "0")}`;
 }
 
-interface Edit {
-  before: string;
-  after: string;
+interface PendingElement {
+  edit?: { before: string; after: string };
+  block?: { type: "hide" | "remove"; subtree: SubtreeInfo };
 }
 
 /**
@@ -61,18 +61,50 @@ export function compileReview(
   map: LocationMap,
   options: CompileOptions = {},
 ): Review {
-  // Insertion order is the order of each element's first edit, which keeps
+  // Insertion order is the order of each element's first touch, which keeps
   // change ids stable however many times the reviewer went back and forth.
-  const edits = new Map<string, Edit>();
+  // Keyed by the element's own cxId only: an edit of a child under a
+  // removed ancestor still comes out as its own change — pruning by
+  // ancestry needs the location map's tree knowledge and lands with the
+  // undo slice (#59), where the PRD pins it with a test.
+  const perElement = new Map<string, PendingElement>();
   const comments: ReviewComment[] = [];
+
+  const pendingFor = (cxId: string): PendingElement => {
+    const existing = perElement.get(cxId);
+    if (existing !== undefined) {
+      return existing;
+    }
+    const created: PendingElement = {};
+    perElement.set(cxId, created);
+    return created;
+  };
 
   for (const event of events) {
     if (event.type === "text-edit") {
-      const existing = edits.get(event.cxId);
-      if (existing === undefined) {
-        edits.set(event.cxId, { before: event.before, after: event.after });
+      const pending = pendingFor(event.cxId);
+      // An edit after a remove has nothing to land on — the reviewer is
+      // editing a corpse; the removal is the change that counts.
+      if (pending.block?.type === "remove") {
+        continue;
+      }
+      if (pending.edit === undefined) {
+        pending.edit = { before: event.before, after: event.after };
       } else {
-        existing.after = event.after;
+        pending.edit.after = event.after;
+      }
+      continue;
+    }
+
+    if (event.type === "hide" || event.type === "remove") {
+      const pending = pendingFor(event.cxId);
+      // Remove supersedes hide — the question was answered by the verdict —
+      // and drops the element's own edits: nothing left to apply them to.
+      if (event.type === "remove") {
+        pending.block = { type: "remove", subtree: event.subtree };
+        pending.edit = undefined;
+      } else if (pending.block?.type !== "remove") {
+        pending.block = { type: "hide", subtree: event.subtree };
       }
       continue;
     }
@@ -93,18 +125,27 @@ export function compileReview(
     });
   }
 
-  const changes: TextChange[] = [];
-  for (const [cxId, edit] of edits) {
-    if (edit.before === edit.after) {
-      continue;
+  const changes: ReviewChange[] = [];
+  for (const [cxId, pending] of perElement) {
+    if (pending.edit !== undefined && pending.edit.before !== pending.edit.after) {
+      changes.push({
+        id: changeId(changes.length + 1),
+        target: targetFor(cxId, map),
+        type: "text",
+        before: pending.edit.before,
+        after: pending.edit.after,
+      });
     }
-    changes.push({
-      id: changeId(changes.length + 1),
-      target: targetFor(cxId, map),
-      type: "text",
-      before: edit.before,
-      after: edit.after,
-    });
+    if (pending.block !== undefined) {
+      const base = {
+        id: changeId(changes.length + 1),
+        target: targetFor(cxId, map),
+        subtree: pending.block.subtree,
+      };
+      changes.push(
+        pending.block.type === "hide" ? { ...base, type: "hide" } : { ...base, type: "remove" },
+      );
+    }
   }
 
   const meta: ReviewMeta = {
@@ -140,9 +181,18 @@ export function renderReviewMarkdown(review: Review): string {
     lines.push("## Změny", "");
     for (const change of review.changes) {
       const where = change.target.selector ?? change.target.cxId;
-      lines.push(
-        `- **${change.id}** \`${where}\`: ${quote(change.before)} → ${quote(change.after)}`,
-      );
+      if (change.type === "text" && "before" in change) {
+        lines.push(
+          `- **${change.id}** \`${where}\`: ${quote(change.before)} → ${quote(change.after)}`,
+        );
+      } else if ("subtree" in change) {
+        const verb = change.type === "hide" ? "skrýt (hypotéza)" : "smazat (pokyn)";
+        lines.push(
+          `- **${change.id}** ${verb} \`${where}\`: <${change.subtree.tag}>, ${change.subtree.elements} prvků — ${quote(change.subtree.textFingerprint)}`,
+        );
+      } else {
+        lines.push(`- **${change.id}** neznámý typ \`${change.type}\` \`${where}\``);
+      }
     }
     lines.push("");
   }

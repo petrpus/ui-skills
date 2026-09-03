@@ -13,7 +13,11 @@ Argumenty: $ARGUMENTS
    práce CLI.
 3. Otevři vzniklý `applied.md` a dořeš, co CLI nechalo člověku/agentovi:
    - položky `needs-input` — prozkoumej vysvětlení a navrhni uživateli řešení,
-     **nehádej a neměň náhodný podobný řádek**,
+     **nehádej a neměň náhodný podobný řádek**; u `remove` proveď odstranění
+     ve zdrojích v rozsahu z poznámky (podstrom, ne jen kořen), u `hide`
+     odpověz na hypotézu v plánu,
+   - položky `skipped` s neznámým typem — jen vykaž; editor je novější než
+     apply, nikdy je nedomýšlej,
    - komentáře `odpovědět` (kategorie `question`) — odpověz, needituj,
    - komentáře `rozpadnout na plán` — rozpadni na plán a navrhni postup
      podle priority.
