@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -94,5 +94,57 @@ describe("capture", () => {
     expect(() =>
       capture("page.html", workDir, { singleFileBinary: tool }, new Date("2026-01-01T00:00:00Z")),
     ).toThrow(/nepořídil/);
+  });
+});
+
+describe("capture — fáze 1 (#56)", () => {
+  function writingTool(html: string): string {
+    return fakeSingleFile(`
+      const { writeFileSync } = require("node:fs");
+      writeFileSync(process.argv[3], ${JSON.stringify(html)});
+      writeFileSync(require("node:path").join(require("node:path").dirname(process.argv[3]), "argv.json"), JSON.stringify(process.argv));
+    `);
+  }
+
+  it("zapíše session.json se zdrojem a časem pořízení", () => {
+    const tool = writingTool("<html><body><p>ahoj</p></body></html>");
+    const now = new Date("2026-09-03T08:00:00Z");
+    const result = capture("page.html", join(dir, "work"), { singleFileBinary: tool }, now);
+
+    const session = JSON.parse(readFileSync(join(result.sessionDir, "session.json"), "utf8")) as {
+      source: string;
+      capturedAt: string;
+    };
+    expect(session.source).toBe("page.html");
+    expect(session.capturedAt).toBe("2026-09-03T08:00:00.000Z");
+  });
+
+  it("URL zdroj dostane rezervu po networkIdle, lokální soubor ne", () => {
+    const tool = writingTool("<html><body><p>web</p></body></html>");
+    const urlResult = capture("http://priklad.test/", join(dir, "work-url"), {
+      singleFileBinary: tool,
+    });
+    const urlArgv = JSON.parse(
+      readFileSync(join(urlResult.sessionDir, "argv.json"), "utf8"),
+    ) as string[];
+    expect(urlArgv).toContain("--browser-wait-delay");
+
+    const fileResult = capture("page.html", join(dir, "work-file"), { singleFileBinary: tool });
+    const fileArgv = JSON.parse(
+      readFileSync(join(fileResult.sessionDir, "argv.json"), "utf8"),
+    ) as string[];
+    expect(fileArgv).not.toContain("--browser-wait-delay");
+  });
+
+  it("password input ve snapshotu nastaví looksLikeLogin", () => {
+    const tool = writingTool('<html><body><form><input type="password"></form></body></html>');
+    const result = capture("http://priklad.test/", join(dir, "work"), { singleFileBinary: tool });
+    expect(result.looksLikeLogin).toBe(true);
+
+    const plain = writingTool("<html><body><h1>Dashboard</h1></body></html>");
+    const clean = capture("http://priklad.test/app", join(dir, "work2"), {
+      singleFileBinary: plain,
+    });
+    expect(clean.looksLikeLogin).toBe(false);
   });
 });

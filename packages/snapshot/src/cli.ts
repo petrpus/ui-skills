@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 import { chromium } from "playwright";
 import { capture, targetUrl } from "./capture.ts";
+import { loginWarning, preflightUrl } from "./preflight.ts";
 import { reportClosedShadowRoots } from "./shadow-probe.ts";
 
-const USAGE = `Použití: canvas-snapshot <soubor.html> [--work-dir <adresář>]
+const USAGE = `Použití: canvas-snapshot <soubor.html | https://…> [--work-dir <adresář>]
 
-  soubor.html   stránka k zachycení (zatím jen lokální soubor)
+  vstup         lokální HTML soubor, nebo veřejná URL (bez přihlášení)
   --work-dir    kam ukládat session (výchozí: .ui-skills)`;
 
 export function parseArgs(argv: readonly string[]): { input: string; workDir: string } {
@@ -29,10 +30,16 @@ async function main(): Promise<void> {
 
   try {
     const { input, workDir } = parseArgs(argv);
+    // The serialiser cannot say why a page did not come — this can.
+    await preflightUrl(input);
     // Pointed at the browser Playwright already manages: the serialiser's own
     // could open local files but reached nothing over the network, and both
     // sides rendering in the same browser is what the comparison assumes.
     const result = capture(input, workDir, { browserExecutablePath: chromium.executablePath() });
+
+    if (result.looksLikeLogin) {
+      process.stderr.write(`${loginWarning()}\n`);
+    }
 
     process.stdout.write(
       `✓ snapshot: ${result.snapshotPath}\n` +

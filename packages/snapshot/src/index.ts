@@ -1,5 +1,6 @@
 export { type CaptureResult, capture, targetUrl } from "./capture.ts";
 export { instrument } from "./instrument.ts";
+export { loginWarning, looksLikeLoginPage, preflightUrl } from "./preflight.ts";
 export { sanitize } from "./sanitize.ts";
 export {
   type CdpNode,

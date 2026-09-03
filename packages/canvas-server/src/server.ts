@@ -90,6 +90,31 @@ function respondJson(response: ServerResponse, status: number, payload: unknown)
  * The log is the source of truth precisely so that this call still works in a
  * later process that saw none of the events arrive.
  */
+/**
+ * Provenance written by capture into the session dir. Missing or broken is
+ * not an error — an old session predates the file, and a review without
+ * meta.source beats no review at all.
+ */
+function readSessionMeta(sessionDir: string): { source?: string; capturedAt?: string } {
+  const path = join(sessionDir, "session.json");
+  if (!existsSync(path)) {
+    return {};
+  }
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
+    if (typeof parsed !== "object" || parsed === null) {
+      return {};
+    }
+    const { source, capturedAt } = parsed as { source?: unknown; capturedAt?: unknown };
+    return {
+      ...(typeof source === "string" ? { source } : {}),
+      ...(typeof capturedAt === "string" ? { capturedAt } : {}),
+    };
+  } catch {
+    return {};
+  }
+}
+
 function compileFromDisk(sessionDir: string): DoneResult {
   const logPath = join(sessionDir, "events.jsonl");
   const raw = existsSync(logPath) ? readFileSync(logPath, "utf8") : "";
@@ -98,7 +123,7 @@ function compileFromDisk(sessionDir: string): DoneResult {
   const mapPath = join(sessionDir, "map.json");
   const map = existsSync(mapPath) ? parseLocationMap(readFileSync(mapPath, "utf8")) : {};
 
-  const review = compileReview(events, map);
+  const review = compileReview(events, map, { meta: readSessionMeta(sessionDir) });
   // The contract is validated on the way out, not assumed: a compiler bug
   // should fail here, loudly, not in the apply step days later.
   validateReview(review);
