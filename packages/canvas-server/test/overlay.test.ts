@@ -281,7 +281,8 @@ describe("komentáře (C + klik)", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, options] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("/events");
-    expect(JSON.parse(options.body as string)).toEqual({
+    // toMatchObject: akce nesou i actionId (#59), který má vlastní test.
+    expect(JSON.parse(options.body as string)).toMatchObject({
       type: "comment",
       cxId: "cx-1",
       text: "Celý blok přepracovat.",
@@ -1086,3 +1087,284 @@ describe("duplikace — nálezy z review (#58)", () => {
 function dispatch2(win2: Win, target: EventTarget): void {
   target.dispatchEvent(new win2.MouseEvent("click", { bubbles: true, cancelable: true }));
 }
+
+describe("panel změn a undo/redo (#59)", () => {
+  function panel(host: ReturnType<typeof initOverlay>, role: string): El {
+    return host?.shadowRoot?.querySelector(`[data-role='${role}']`) as El;
+  }
+  function items(host: ReturnType<typeof initOverlay>): El[] {
+    return Array.from(host?.shadowRoot?.querySelectorAll("[data-role='panel-item']") ?? []) as El[];
+  }
+  async function editHeading(text: string): Promise<void> {
+    const heading = element("cx-0");
+    dispatch(heading, "dblclick");
+    heading.textContent = text;
+    heading.dispatchEvent(new win.FocusEvent("blur"));
+    await settled();
+  }
+
+  it("akce se řadí do panelu v pořadí vzniku, s typem a počtem", async () => {
+    const host = initOverlay(win);
+    await editHeading("Jedna");
+    dispatch(element("cx-1"), "click");
+    dispatch(panel(host, "crumb-hide"), "click");
+    await settled();
+
+    const list = items(host);
+    expect(list).toHaveLength(2);
+    expect(list[0]?.textContent).toContain("✎");
+    expect(list[1]?.textContent).toContain("🙈");
+    expect(panel(host, "panel-header").textContent).toContain("2");
+  });
+
+  it("každá akce nese actionId a jde do logu okamžitě", async () => {
+    initOverlay(win);
+    await editHeading("Jedna");
+    const body = JSON.parse((fetchMock.mock.calls[0] as [string, RequestInit])[1].body as string);
+    expect(body.actionId).toMatch(/^act-/);
+  });
+
+  it("Ctrl+Z pošle revoke poslední akce a vrátí DOM", async () => {
+    const host = initOverlay(win);
+    await editHeading("Jedna");
+    key("keydown", { key: "z", ctrlKey: true });
+    await settled();
+
+    expect(element("cx-0").textContent).toBe("Naše služby");
+    const last = JSON.parse((fetchMock.mock.calls[1] as [string, RequestInit])[1].body as string);
+    expect(last.type).toBe("revoke");
+    expect(items(host)).toHaveLength(0);
+  });
+
+  it("Ctrl+Shift+Z pošle restore a DOM zopakuje", async () => {
+    const host = initOverlay(win);
+    await editHeading("Jedna");
+    key("keydown", { key: "z", ctrlKey: true });
+    key("keydown", { key: "Z", ctrlKey: true, shiftKey: true });
+    await settled();
+
+    expect(element("cx-0").textContent).toBe("Jedna");
+    const last = JSON.parse((fetchMock.mock.calls[2] as [string, RequestInit])[1].body as string);
+    expect(last.type).toBe("restore");
+    expect(items(host)).toHaveLength(1);
+  });
+
+  it("undo smazání vrátí element na místo", async () => {
+    const host = initOverlay(win);
+    dispatch(element("cx-0"), "click");
+    dispatch(panel(host, "crumb-remove"), "click");
+    await settled();
+    expect(win.document.querySelector('[data-cx-id="cx-0"]')).toBeNull();
+
+    key("keydown", { key: "z", ctrlKey: true });
+    await settled();
+    const restored = win.document.querySelector('[data-cx-id="cx-0"]');
+    expect(restored).not.toBeNull();
+    expect(restored?.nextElementSibling?.getAttribute("data-cx-id")).toBe("cx-1");
+  });
+
+  it("zahodit jde i prostřední položku — ✕ revokuje právě ji", async () => {
+    const host = initOverlay(win);
+    await editHeading("Jedna");
+    dispatch(element("cx-1"), "click");
+    dispatch(panel(host, "crumb-hide"), "click");
+    await settled();
+    await editHeading("Dvě");
+
+    const middle = items(host)[1];
+    dispatch(middle?.querySelector("[data-role='panel-discard']") as El, "click");
+    await settled();
+
+    expect(items(host)).toHaveLength(2);
+    expect((element("cx-1") as El & { style: { display: string } }).style.display).not.toBe("none");
+    const bodies = fetchMock.mock.calls.map((call) =>
+      JSON.parse(((call as [string, RequestInit])[1] as { body: string }).body),
+    );
+    expect(bodies.filter((body) => body.type === "revoke")).toHaveLength(1);
+  });
+
+  it("nová akce po undo vyčistí redo", async () => {
+    const host = initOverlay(win);
+    await editHeading("Jedna");
+    key("keydown", { key: "z", ctrlKey: true });
+    await editHeading("Dvě");
+    key("keydown", { key: "Z", ctrlKey: true, shiftKey: true });
+    await settled();
+
+    const bodies = fetchMock.mock.calls.map((call) =>
+      JSON.parse(((call as [string, RequestInit])[1] as { body: string }).body),
+    );
+    expect(bodies.filter((body) => body.type === "restore")).toHaveLength(0);
+    expect(items(host)).toHaveLength(1);
+  });
+
+  it("Ctrl+Z během editace nechává nativní undo — revoke se neposílá", async () => {
+    initOverlay(win);
+    const heading = element("cx-0");
+    dispatch(heading, "dblclick");
+    heading.dispatchEvent(
+      new win.KeyboardEvent("keydown", {
+        key: "z",
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await settled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("klik na položku vybere dotčený element", async () => {
+    const host = initOverlay(win);
+    await editHeading("Jedna");
+    dispatch(items(host)[0]?.querySelector("[data-role='panel-goto']") as El, "click");
+    expect(panel(host, "select").hasAttribute("hidden")).toBe(false);
+  });
+
+  it("po uzavření review undo nic neposílá", async () => {
+    initOverlay(win);
+    await editHeading("Jedna");
+    key("keydown", { key: "Enter", ctrlKey: true });
+    await settled();
+    fetchMock.mockClear();
+
+    key("keydown", { key: "z", ctrlKey: true });
+    await settled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("Ctrl+Z po kliknutí na tlačítko overlaye (#59 flake)", () => {
+  it("fokus na tlačítku není psaní — undo projde", async () => {
+    const host = initOverlay(win);
+    dispatch(element("cx-0"), "click");
+    const removeButton = host?.shadowRoot?.querySelector("[data-role='crumb-remove']") as El & {
+      focus(): void;
+    };
+    dispatch(removeButton, "click");
+    await settled();
+    expect(win.document.querySelector('[data-cx-id="cx-0"]')).toBeNull();
+
+    removeButton.focus();
+    removeButton.dispatchEvent(
+      new win.KeyboardEvent("keydown", {
+        key: "z",
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+      }),
+    );
+    await settled();
+
+    expect(win.document.querySelector('[data-cx-id="cx-0"]')).not.toBeNull();
+  });
+
+  it("fokus v textarea komentáře psaní je — undo se neposílá", async () => {
+    const host = initOverlay(win);
+    key("keydown", { key: "c" });
+    dispatch(element("cx-1"), "click");
+    key("keyup", { key: "c" });
+    const text = host?.shadowRoot?.querySelector("[data-role='comment-text']") as El & {
+      focus(): void;
+    };
+    text.focus();
+    fetchMock.mockClear();
+
+    text.dispatchEvent(
+      new win.KeyboardEvent("keydown", {
+        key: "z",
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+      }),
+    );
+    await settled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("zahození mimo pořadí (#59 review)", () => {
+  function panelPart(host: ReturnType<typeof initOverlay>, role: string): El {
+    return host?.shadowRoot?.querySelector(`[data-role='${role}']`) as El;
+  }
+  function panelItems(host: ReturnType<typeof initOverlay>): El[] {
+    return Array.from(host?.shadowRoot?.querySelectorAll("[data-role='panel-item']") ?? []) as El[];
+  }
+
+  it("zahození dřívějšího remove s odpojeným sousedem nespadne a element vrátí", async () => {
+    // Přiléhající sourozenci bez bílých znaků — minifikovaný markup.
+    const holder = win.document.createElement("div");
+    holder.innerHTML =
+      '<span data-cx-id="cx-a">A</span><span data-cx-id="cx-b">B</span><span data-cx-id="cx-c">C</span>';
+    win.document.body.appendChild(holder);
+
+    const host = initOverlay(win);
+    dispatch(element("cx-a"), "click");
+    dispatch(panelPart(host, "crumb-remove"), "click");
+    dispatch(element("cx-b"), "click");
+    dispatch(panelPart(host, "crumb-remove"), "click");
+    await settled();
+    expect(holder.querySelectorAll("span")).toHaveLength(1);
+
+    // Zahodit PRVNÍ remove — jeho zachycený nextSibling (B) už není v DOM.
+    dispatch(panelItems(host)[0]?.querySelector("[data-role='panel-discard']") as El, "click");
+    await settled();
+
+    const spans = Array.from(holder.querySelectorAll("span")).map((span) =>
+      span.getAttribute("data-cx-id"),
+    );
+    expect(spans).toEqual(["cx-a", "cx-c"]);
+    const bodies = fetchMock.mock.calls.map((call) =>
+      JSON.parse(((call as [string, RequestInit])[1] as { body: string }).body),
+    );
+    expect(bodies.filter((body) => body.type === "revoke")).toHaveLength(1);
+  });
+
+  it("zahození dřívější editace kaskáduje na pozdější editace téhož prvku", async () => {
+    const host = initOverlay(win);
+    const heading = element("cx-0");
+
+    dispatch(heading, "dblclick");
+    heading.textContent = "Ypsilon";
+    heading.dispatchEvent(new win.FocusEvent("blur"));
+    await settled();
+    dispatch(heading, "dblclick");
+    heading.textContent = "Zeta";
+    heading.dispatchEvent(new win.FocusEvent("blur"));
+    await settled();
+    expect(panelItems(host)).toHaveLength(2);
+
+    dispatch(panelItems(host)[0]?.querySelector("[data-role='panel-discard']") as El, "click");
+    await settled();
+
+    // DOM zpět na originál, panel prázdný, obě editace revokované v logu.
+    expect(heading.textContent).toBe("Naše služby");
+    expect(panelItems(host)).toHaveLength(0);
+    const bodies = fetchMock.mock.calls.map((call) =>
+      JSON.parse(((call as [string, RequestInit])[1] as { body: string }).body),
+    );
+    expect(bodies.filter((body) => body.type === "revoke")).toHaveLength(2);
+  });
+
+  it("zahození POZDĚJŠÍ editace nechává dřívější žít", async () => {
+    const host = initOverlay(win);
+    const heading = element("cx-0");
+
+    dispatch(heading, "dblclick");
+    heading.textContent = "Ypsilon";
+    heading.dispatchEvent(new win.FocusEvent("blur"));
+    await settled();
+    dispatch(heading, "dblclick");
+    heading.textContent = "Zeta";
+    heading.dispatchEvent(new win.FocusEvent("blur"));
+    await settled();
+
+    dispatch(panelItems(host)[1]?.querySelector("[data-role='panel-discard']") as El, "click");
+    await settled();
+
+    expect(heading.textContent).toBe("Ypsilon");
+    expect(panelItems(host)).toHaveLength(1);
+  });
+});

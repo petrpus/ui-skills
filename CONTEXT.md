@@ -16,7 +16,9 @@ posune se tady.
   předat. Vždy v gitignore (může nést citlivá data).
 - **Event log** — append-only JSONL na disku, jediný zdroj pravdy. Každá akce
   editoru se zapisuje okamžitě; nic se needituje ani nemaže — i undo/zahození
-  je nová událost. Pád prohlížeče nic neztratí.
+  je nová událost (`revoke`/`restore` odkazující `actionId`, ražené jako
+  `act-<boot token>-<n>` stejně jako syntetická id duplikátů). Pád prohlížeče
+  nic neztratí.
 - **Overlay** — editor injektovaný do servírované kopie snapshotu. Čistý ES
   modul bez buildu a frameworku, UI v shadow rootu (izolace stylů oběma
   směry). Soubor snapshotu na disku zůstává netknutý.

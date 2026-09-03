@@ -80,9 +80,14 @@ it("smyčka drží: server → výběr → editace → komentář → Hotovo →
   // one place that guarantee runs against a real server.
   await page.locator("[data-role='comment-save']").click();
 
-  // Remove a block via the selection bar: click selects, the bar's action
-  // sends the instruction with the subtree description.
-  const doomed = page.locator("h2[data-cx-id]").first();
+  // Remove, take it back, remove another (#59): the log records all three
+  // steps, the compiled review must hold exactly the second removal.
+  const regretted = page.locator("h2[data-cx-id]").first();
+  await regretted.click();
+  await page.locator("[data-role='crumb-remove']").click();
+  await page.keyboard.press("ControlOrMeta+z");
+
+  const doomed = page.locator("h2[data-cx-id]").nth(1);
   const doomedText = ((await doomed.textContent()) ?? "").replace(/\s+/g, " ").trim();
   await doomed.click();
   await page.locator("[data-role='crumb-remove']").click();
@@ -105,8 +110,9 @@ it("smyčka drží: server → výběr → editace → komentář → Hotovo →
   expect(comment?.category).toBe("idea");
   expect(comment?.target.cxId).toMatch(/^cx-\d+$/);
 
-  const removal = review.changes.find((candidate) => candidate.type === "remove");
-  expect(removal).toBeDefined();
+  const removals = review.changes.filter((candidate) => candidate.type === "remove");
+  expect(removals).toHaveLength(1);
+  const removal = removals[0];
   expect(removal !== undefined && "subtree" in removal).toBe(true);
   if (removal !== undefined && "subtree" in removal) {
     expect(removal.subtree.tag).toBe("h2");
