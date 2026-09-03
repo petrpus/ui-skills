@@ -215,3 +215,72 @@ describe("skládání hide + edit (#57 review)", () => {
     ]);
   });
 });
+
+describe("duplikace (#58)", () => {
+  it("duplicate projde do výstupu s targetem originálu a mapováním", () => {
+    const review = compileReview(
+      [{ type: "duplicate", cxId: "cx-1", mapping: { "cx-1": "cx-d1" } }],
+      map,
+    );
+    expect(review.changes[0]).toMatchObject({
+      type: "duplicate",
+      target: { cxId: "cx-1" },
+      mapping: { "cx-1": "cx-d1" },
+    });
+    expect(() => validateReview(review)).not.toThrow();
+  });
+
+  it("dva duplikáty téhož prvku jsou dvě změny — chci jich víc, ne jednu", () => {
+    const review = compileReview(
+      [
+        { type: "duplicate", cxId: "cx-1", mapping: { "cx-1": "cx-d1" } },
+        { type: "duplicate", cxId: "cx-1", mapping: { "cx-1": "cx-d2" } },
+      ],
+      map,
+    );
+    expect(review.changes).toHaveLength(2);
+  });
+
+  it("edit v duplikátu = samostatná změna se syntetickým cílem (test z PRD)", () => {
+    const review = compileReview(
+      [
+        { type: "duplicate", cxId: "cx-1", mapping: { "cx-1": "cx-d1" } },
+        edit("cx-d1", "Odstavec", "Odstavec jinak"),
+      ],
+      map,
+    );
+    expect(review.changes).toHaveLength(2);
+    expect(review.changes.map((change) => [change.type, change.target.cxId])).toEqual([
+      ["duplicate", "cx-1"],
+      ["text", "cx-d1"],
+    ]);
+  });
+
+  it("review.md duplikaci vypíše čitelně", () => {
+    const markdown = renderReviewMarkdown(
+      compileReview([{ type: "duplicate", cxId: "cx-1", mapping: { "cx-1": "cx-d1" } }], map),
+    );
+    expect(markdown).toMatch(/duplikovat/i);
+  });
+});
+
+describe("duplikace — hijack guard (#58 review)", () => {
+  it("mapping hodnota kolidující s reálným cx-id se odfiltruje", () => {
+    const review = compileReview(
+      [{ type: "duplicate", cxId: "cx-1", mapping: { "cx-1": "cx-2", "cx-9": "cx-d1" } }],
+      map,
+    );
+    const change = review.changes[0];
+    expect(change !== undefined && "mapping" in change ? change.mapping : {}).toEqual({
+      "cx-9": "cx-d1",
+    });
+  });
+
+  it("mapping složený jen z kolizí celou duplikaci zahodí", () => {
+    const review = compileReview(
+      [{ type: "duplicate", cxId: "cx-1", mapping: { "cx-1": "cx-2" } }],
+      map,
+    );
+    expect(review.changes).toEqual([]);
+  });
+});

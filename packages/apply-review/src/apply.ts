@@ -1,4 +1,10 @@
-import type { Review, ReviewChange, ReviewComment, TextChange } from "@ui-skills/schema";
+import type {
+  Review,
+  ReviewChange,
+  ReviewComment,
+  ReviewTarget,
+  TextChange,
+} from "@ui-skills/schema";
 import { type Candidate, mapTarget, type SourceFile } from "./map.ts";
 
 export type ApplyStatus = "applied" | "needs-input" | "skipped";
@@ -87,6 +93,13 @@ export function applyReview(review: Review, files: readonly SourceFile[]): Apply
 
   const changes: AppliedChange[] = [];
 
+  /** One unambiguous place for a target, or nothing — never a guess. */
+  function locateSingleCandidate(target: ReviewTarget): string | undefined {
+    const mapping = mapTarget(target, target.textFingerprint ?? "", currentFiles());
+    const [first] = mapping.candidates;
+    return mapping.candidates.length === 1 && first !== undefined ? locate(first) : undefined;
+  }
+
   function apply(change: TextChange, candidate: Candidate): AppliedChange {
     const content = working.get(candidate.path) ?? "";
     const next =
@@ -147,6 +160,15 @@ export function applyReview(review: Review, files: readonly SourceFile[]): Apply
    * apply — one skipped change, never a crash.
    */
   function nonTextRow(change: Exclude<ReviewChange, TextChange>): AppliedChange {
+    if ("mapping" in change) {
+      const location = locateSingleCandidate(change.target);
+      return {
+        id: change.id,
+        status: "needs-input",
+        ...(location === undefined ? {} : { location }),
+        note: `pokyn „duplikovat" (${Object.keys(change.mapping).length} prvků) — zduplikování ve zdrojích provede agent`,
+      };
+    }
     if (!("subtree" in change)) {
       return {
         id: change.id,
@@ -173,11 +195,36 @@ export function applyReview(review: Review, files: readonly SourceFile[]): Apply
     };
   }
 
+  // Synthetic ids minted by duplication: an edit targeting one describes
+  // the CLONE. Its `before` text greps straight to the original's source —
+  // auto-applying there would rewrite the wrong element, so these edits
+  // always go to the agent, translated through the duplicate change.
+  const syntheticOrigins = new Map<string, { duplicateId: string; target: ReviewTarget }>();
+  for (const change of review.changes) {
+    if ("mapping" in change) {
+      for (const synthetic of Object.values(change.mapping)) {
+        syntheticOrigins.set(synthetic, { duplicateId: change.id, target: change.target });
+      }
+    }
+  }
+
   for (const change of review.changes) {
     // Structural, not by type string: UnknownChange's `type` is an open
     // string, so only the presence of `before` proves a direct text edit.
     if (!("before" in change)) {
       changes.push(nonTextRow(change));
+      continue;
+    }
+
+    const origin = syntheticOrigins.get(change.target.cxId);
+    if (origin !== undefined) {
+      const location = locateSingleCandidate(origin.target);
+      changes.push({
+        id: change.id,
+        status: "needs-input",
+        ...(location === undefined ? {} : { location }),
+        note: `cíl je duplikát (z ${origin.duplicateId}) — aplikovat až po zduplikování ve zdrojích, originál je vodítko`,
+      });
       continue;
     }
 

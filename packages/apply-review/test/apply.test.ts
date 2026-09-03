@@ -216,3 +216,65 @@ describe("blokové změny a neznámé typy (#57)", () => {
     expect(result.ratio.skipped).toBe(1);
   });
 });
+
+describe("duplikace (#58)", () => {
+  const duplicate = {
+    id: "chg_001",
+    target: { cxId: "cx-1", textFingerprint: "Naše služby" },
+    type: "duplicate" as const,
+    mapping: { "cx-1": "cx-d1" },
+  };
+
+  it("duplicate se namapuje přes originál a provádí ho agent", () => {
+    const result = applyReview(review({ changes: [duplicate] }), [component]);
+    expect(result.changes[0]).toMatchObject({
+      status: "needs-input",
+      location: "src/Services.tsx:1",
+    });
+    expect(result.changes[0]?.note).toMatch(/duplik/i);
+    expect(result.updates.size).toBe(0);
+  });
+
+  it("edit se syntetickým cílem se NIKDY neaplikuje na originální výskyt", () => {
+    const result = applyReview(
+      review({
+        changes: [
+          duplicate,
+          {
+            id: "chg_002",
+            target: { cxId: "cx-d1" },
+            type: "text" as const,
+            before: "Naše služby",
+            after: "Vaše služby",
+          },
+        ],
+      }),
+      [component],
+    );
+    const editRow = result.changes[1];
+    expect(editRow?.status).toBe("needs-input");
+    expect(editRow?.note).toMatch(/duplik/i);
+    expect(editRow?.note).toContain("chg_001");
+    // Zdroj zůstal netknutý — text originálu se nesmí přepsat.
+    expect(result.updates.size).toBe(0);
+  });
+
+  it("edit se syntetickým cílem nese lokaci originálu jako vodítko", () => {
+    const result = applyReview(
+      review({
+        changes: [
+          duplicate,
+          {
+            id: "chg_002",
+            target: { cxId: "cx-d1" },
+            type: "text" as const,
+            before: "Naše služby",
+            after: "Vaše služby",
+          },
+        ],
+      }),
+      [component],
+    );
+    expect(result.changes[1]?.location).toBe("src/Services.tsx:1");
+  });
+});

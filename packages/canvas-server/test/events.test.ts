@@ -92,3 +92,19 @@ describe("blokové události (#57)", () => {
     expect(warnings).toHaveLength(1);
   });
 });
+
+describe("duplicate událost (#58)", () => {
+  it("přečte se s mapováním", () => {
+    const { events, warnings } = parseEventLog(
+      log({ type: "duplicate", cxId: "cx-1", mapping: { "cx-1": "cx-d1" } }),
+    );
+    expect(events[0]).toMatchObject({ type: "duplicate", mapping: { "cx-1": "cx-d1" } });
+    expect(warnings).toEqual([]);
+  });
+
+  it("bez mapování se přeskočí s varováním", () => {
+    const { events, warnings } = parseEventLog(log({ type: "duplicate", cxId: "cx-1" }));
+    expect(events).toEqual([]);
+    expect(warnings).toHaveLength(1);
+  });
+});

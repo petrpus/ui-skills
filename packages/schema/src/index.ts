@@ -4,6 +4,7 @@ export {
   COMMENT_PRIORITIES,
   type CommentCategory,
   type CommentPriority,
+  type DuplicateChange,
   type HideChange,
   REVIEW_SCHEMA_VERSION,
   type RemoveChange,

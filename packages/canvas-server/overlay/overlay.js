@@ -186,6 +186,7 @@ const MARKUP = `
     <span class="actions">
       <button type="button" data-role="crumb-edit" title="Upravit text výběru">✎ text</button>
       <button type="button" data-role="crumb-comment" title="Komentovat výběr">💬 komentář</button>
+      <button type="button" data-role="crumb-duplicate" title="Duplikovat výběr — chci jich víc">⧉ duplikovat</button>
       <button type="button" data-role="crumb-hide" title="Skrýt výběr — hypotéza, co kdyby tu nebyl">🙈 skrýt</button>
       <button type="button" data-role="crumb-remove" title="Smazat výběr — pokyn k odstranění">🗑 smazat</button>
     </span>
@@ -678,6 +679,42 @@ export function initOverlay(win) {
     };
   }
 
+  // Unique across page loads, not just within one: a reload or a second
+  // tab against the same session appends to the same log, and a counter
+  // alone would mint colliding cx-d1 ids for different elements. The boot
+  // token is random per overlay boot; the counter keeps ids readable.
+  const bootToken = Math.random().toString(36).slice(2, 8);
+  let duplicateCounter = 0;
+
+  function duplicateSelected() {
+    if (selected === null || closed) {
+      return;
+    }
+    const original = selected;
+    const clone = original.cloneNode(true);
+
+    // Every instrumented element of the clone gets a fresh synthetic
+    // identity, walked in the same document order on both sides so the
+    // pairing cannot drift. The duplicate change carries the mapping —
+    // that is what makes the clone a first-class target for later edits.
+    const originals = [original, ...original.querySelectorAll("[data-cx-id]")];
+    const clones = [clone, ...clone.querySelectorAll("[data-cx-id]")];
+    const mapping = {};
+    originals.forEach((node, index) => {
+      const cxId = node.getAttribute("data-cx-id");
+      if (cxId === null) {
+        return;
+      }
+      duplicateCounter += 1;
+      const synthetic = `cx-d${bootToken}-${duplicateCounter}`;
+      mapping[cxId] = synthetic;
+      clones[index]?.setAttribute("data-cx-id", synthetic);
+    });
+
+    original.after(clone);
+    send({ type: "duplicate", cxId: original.getAttribute("data-cx-id"), mapping });
+  }
+
   function hideSelected() {
     if (selected === null || closed) {
       return;
@@ -703,6 +740,9 @@ export function initOverlay(win) {
     select(null);
   }
 
+  shadow.querySelector("[data-role='crumb-duplicate']").addEventListener("click", () => {
+    duplicateSelected();
+  });
   shadow.querySelector("[data-role='crumb-hide']").addEventListener("click", () => {
     hideSelected();
   });

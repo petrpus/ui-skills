@@ -15,7 +15,9 @@ Argumenty: $ARGUMENTS
    - položky `needs-input` — prozkoumej vysvětlení a navrhni uživateli řešení,
      **nehádej a neměň náhodný podobný řádek**; u `remove` proveď odstranění
      ve zdrojích v rozsahu z poznámky (podstrom, ne jen kořen), u `hide`
-     odpověz na hypotézu v plánu,
+     odpověz na hypotézu v plánu, u `duplicate` zduplikuj ve zdrojích a
+     teprve pak aplikuj editace cílené na duplikát (jsou označené, s lokací
+     originálu jako vodítkem),
    - položky `skipped` s neznámým typem — jen vykaž; editor je novější než
      apply, nikdy je nedomýšlej,
    - komentáře `odpovědět` (kategorie `question`) — odpověz, needituj,
