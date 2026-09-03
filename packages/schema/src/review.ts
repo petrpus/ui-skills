@@ -73,7 +73,20 @@ export interface UnknownChange {
   readonly raw: Readonly<Record<string, unknown>>;
 }
 
-export type ReviewChange = TextChange | HideChange | RemoveChange | UnknownChange;
+/**
+ * "I want five of these, not three." The target names the original; the
+ * mapping hands every element of the clone a synthetic identity (original
+ * cx-id → synthetic cx-d id), so later edits inside the duplicate have a
+ * target the compiler and apply can follow.
+ */
+export interface DuplicateChange {
+  readonly id: string;
+  readonly target: ReviewTarget;
+  readonly type: "duplicate";
+  readonly mapping: Readonly<Record<string, string>>;
+}
+
+export type ReviewChange = TextChange | HideChange | RemoveChange | DuplicateChange | UnknownChange;
 
 export const COMMENT_CATEGORIES = ["change-request", "question", "idea"] as const;
 export type CommentCategory = (typeof COMMENT_CATEGORIES)[number];
@@ -211,6 +224,24 @@ function validateChange(raw: unknown, path: string): ReviewChange {
   }
   if (raw.type === "remove") {
     return { id, target, type: "remove", subtree: validateSubtree(raw.subtree, path) };
+  }
+
+  if (raw.type === "duplicate") {
+    const mapping = raw.mapping;
+    if (!isRecord(mapping) || Object.keys(mapping).length === 0) {
+      throw new ReviewError(
+        'chybí neprázdné "mapping" — duplikát bez identity nejde dál editovat',
+        path,
+      );
+    }
+    const clean: Record<string, string> = Object.create(null);
+    for (const [original, synthetic] of Object.entries(mapping)) {
+      if (typeof synthetic !== "string" || synthetic === "") {
+        throw new ReviewError(`"mapping.${original}" musí být neprázdný řetězec`, path);
+      }
+      clean[original] = synthetic;
+    }
+    return { id, target, type: "duplicate", mapping: clean };
   }
 
   // Unknown on purpose, not rejected: see UnknownChange.

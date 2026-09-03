@@ -46,6 +46,8 @@ function commentId(ordinal: number): string {
 interface PendingElement {
   edit?: { before: string; after: string };
   block?: { type: "hide" | "remove"; subtree: SubtreeInfo };
+  /** An array on purpose: two clicks mean two more copies, never coalesced. */
+  duplicates?: Readonly<Record<string, string>>[];
 }
 
 /**
@@ -96,6 +98,20 @@ export function compileReview(
       continue;
     }
 
+    if (event.type === "duplicate") {
+      // The log is untrusted: a mapping value colliding with a REAL cx-id
+      // would hijack that element's later edits into the duplicate path.
+      // Colliding entries are stripped; a mapping with nothing left is not
+      // a duplication anyone can follow.
+      const entries = Object.entries(event.mapping).filter(([, synthetic]) => !(synthetic in map));
+      if (entries.length === 0) {
+        continue;
+      }
+      const pending = pendingFor(event.cxId);
+      pending.duplicates = [...(pending.duplicates ?? []), Object.fromEntries(entries)];
+      continue;
+    }
+
     if (event.type === "hide" || event.type === "remove") {
       const pending = pendingFor(event.cxId);
       // Remove supersedes hide — the question was answered by the verdict —
@@ -125,6 +141,9 @@ export function compileReview(
     });
   }
 
+  // Emission is stable-by-slot per element (edit, block, duplicates), not
+  // chronological across types — ids stay stable, review.md may narrate a
+  // same-element remove before its earlier duplicate.
   const changes: ReviewChange[] = [];
   for (const [cxId, pending] of perElement) {
     if (pending.edit !== undefined && pending.edit.before !== pending.edit.after) {
@@ -145,6 +164,14 @@ export function compileReview(
       changes.push(
         pending.block.type === "hide" ? { ...base, type: "hide" } : { ...base, type: "remove" },
       );
+    }
+    for (const mapping of pending.duplicates ?? []) {
+      changes.push({
+        id: changeId(changes.length + 1),
+        target: targetFor(cxId, map),
+        type: "duplicate",
+        mapping,
+      });
     }
   }
 
@@ -184,6 +211,10 @@ export function renderReviewMarkdown(review: Review): string {
       if (change.type === "text" && "before" in change) {
         lines.push(
           `- **${change.id}** \`${where}\`: ${quote(change.before)} → ${quote(change.after)}`,
+        );
+      } else if ("mapping" in change) {
+        lines.push(
+          `- **${change.id}** duplikovat \`${where}\` (${Object.keys(change.mapping).length} prvků → nové id)`,
         );
       } else if ("subtree" in change) {
         const verb = change.type === "hide" ? "skrýt (hypotéza)" : "smazat (pokyn)";

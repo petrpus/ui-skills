@@ -961,3 +961,128 @@ describe("skrýt a smazat (#57)", () => {
     expect(win.document.querySelector('[data-cx-id="cx-0"]')).not.toBeNull();
   });
 });
+
+describe("duplikace (#58)", () => {
+  function button(host: ReturnType<typeof initOverlay>): El {
+    return host?.shadowRoot?.querySelector("[data-role='crumb-duplicate']") as El;
+  }
+
+  it("Duplikovat vloží klon za originál a celému podstromu dá syntetická id", async () => {
+    const host = initOverlay(win);
+    dispatch(element("cx-8"), "click");
+    dispatch(button(host), "click");
+    await settled();
+
+    const sections = win.document.querySelectorAll("section");
+    expect(sections).toHaveLength(2);
+    const clone = sections[1] as El;
+    expect(clone.getAttribute("data-cx-id")).toMatch(/^cx-d[a-z0-9]+-\d+$/);
+    const cloneIds = Array.from(clone.querySelectorAll("[data-cx-id]")).map((node) =>
+      (node as El).getAttribute("data-cx-id"),
+    );
+    expect(cloneIds.every((id) => id?.startsWith("cx-d"))).toBe(true);
+    // Originál zůstává netknutý.
+    expect(element("cx-8").getAttribute("data-cx-id")).toBe("cx-8");
+  });
+
+  it("event duplicate nese mapování celého podstromu", async () => {
+    const host = initOverlay(win);
+    dispatch(element("cx-8"), "click");
+    dispatch(button(host), "click");
+    await settled();
+
+    const body = JSON.parse((fetchMock.mock.calls[0] as [string, RequestInit])[1].body as string);
+    expect(body.type).toBe("duplicate");
+    expect(body.cxId).toBe("cx-8");
+    expect(Object.keys(body.mapping)).toEqual(["cx-8", "cx-0", "cx-1"]);
+    expect(body.mapping["cx-8"]).toMatch(/^cx-d[a-z0-9]+-\d+$/);
+  });
+
+  it("dva kliky dají dva klony s různými id", async () => {
+    const host = initOverlay(win);
+    dispatch(element("cx-1"), "click");
+    dispatch(button(host), "click");
+    dispatch(button(host), "click");
+    await settled();
+
+    const first = JSON.parse((fetchMock.mock.calls[0] as [string, RequestInit])[1].body as string);
+    const second = JSON.parse((fetchMock.mock.calls[1] as [string, RequestInit])[1].body as string);
+    expect(first.mapping["cx-1"]).not.toBe(second.mapping["cx-1"]);
+    expect(win.document.querySelectorAll("p").length).toBe(3);
+  });
+
+  it("duplikát jde vybrat a editovat — edit odkazuje na syntetické id", async () => {
+    const host = initOverlay(win);
+    dispatch(element("cx-1"), "click");
+    dispatch(button(host), "click");
+    await settled();
+    fetchMock.mockClear();
+
+    const clone = win.document.querySelectorAll("p")[1] as El;
+    dispatch(clone, "dblclick");
+    clone.textContent = "Jiný text";
+    clone.dispatchEvent(new win.FocusEvent("blur"));
+    await settled();
+
+    const body = JSON.parse((fetchMock.mock.calls[0] as [string, RequestInit])[1].body as string);
+    expect(body.type).toBe("text-edit");
+    expect(body.cxId).toMatch(/^cx-d[a-z0-9]+-\d+$/);
+  });
+
+  it("po uzavření review duplikace nic nedělá", async () => {
+    const host = initOverlay(win);
+    dispatch(element("cx-1"), "click");
+    key("keydown", { key: "Enter", ctrlKey: true });
+    await settled();
+    fetchMock.mockClear();
+
+    dispatch(button(host), "click");
+    await settled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(win.document.querySelectorAll("p")).toHaveLength(1);
+  });
+});
+
+describe("duplikace — nálezy z review (#58)", () => {
+  it("dva booty overlaye nad touž stránkou nemintují kolidující id", async () => {
+    const host1 = initOverlay(win);
+    dispatch(element("cx-1"), "click");
+    dispatch(host1?.shadowRoot?.querySelector("[data-role='crumb-duplicate']") as El, "click");
+    await settled();
+    const first = JSON.parse((fetchMock.mock.calls[0] as [string, RequestInit])[1].body as string);
+
+    // Druhá záložka / reload: čerstvé okno, týž log na serveru.
+    const win2 = new JSDOM(PAGE, { url: "http://localhost:4000/" }).window;
+    const fetch2 = fetchOk({});
+    (win2 as unknown as { fetch: unknown }).fetch = fetch2;
+    const host2 = initOverlay(win2);
+    const paragraph2 = win2.document.querySelector('[data-cx-id="cx-1"]') as El;
+    paragraph2.dispatchEvent(new win2.MouseEvent("click", { bubbles: true, cancelable: true }));
+    dispatch2(win2, host2?.shadowRoot?.querySelector("[data-role='crumb-duplicate']") as El);
+    await settled();
+    const second = JSON.parse((fetch2.mock.calls[0] as [string, RequestInit])[1].body as string);
+
+    expect(first.mapping["cx-1"]).not.toBe(second.mapping["cx-1"]);
+  });
+
+  it("duplikát duplikátu degraduje bezpečně — event má syntetické klíče", async () => {
+    const host = initOverlay(win);
+    dispatch(element("cx-1"), "click");
+    dispatch(host?.shadowRoot?.querySelector("[data-role='crumb-duplicate']") as El, "click");
+    await settled();
+
+    const clone = win.document.querySelectorAll("p")[1] as El;
+    dispatch(clone, "click");
+    dispatch(host?.shadowRoot?.querySelector("[data-role='crumb-duplicate']") as El, "click");
+    await settled();
+
+    const second = JSON.parse((fetchMock.mock.calls[1] as [string, RequestInit])[1].body as string);
+    expect(second.type).toBe("duplicate");
+    expect(Object.keys(second.mapping).every((key) => key.startsWith("cx-d"))).toBe(true);
+    expect(win.document.querySelectorAll("p")).toHaveLength(3);
+  });
+});
+
+function dispatch2(win2: Win, target: EventTarget): void {
+  target.dispatchEvent(new win2.MouseEvent("click", { bubbles: true, cancelable: true }));
+}

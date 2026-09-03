@@ -47,7 +47,15 @@ export interface RemoveEvent {
   readonly at?: string;
 }
 
-export type CanvasEvent = TextEditEvent | CommentEvent | HideEvent | RemoveEvent;
+export interface DuplicateEvent {
+  readonly type: "duplicate";
+  readonly cxId: string;
+  /** original cx-id → synthetic cx-d id, for the clone's whole subtree. */
+  readonly mapping: Readonly<Record<string, string>>;
+  readonly at?: string;
+}
+
+export type CanvasEvent = TextEditEvent | CommentEvent | HideEvent | RemoveEvent | DuplicateEvent;
 
 export interface ParsedEventLog {
   readonly events: readonly CanvasEvent[];
@@ -105,6 +113,22 @@ function toEvent(raw: Record<string, unknown>): CanvasEvent | null {
     };
   }
 
+  if (type === "duplicate") {
+    const mapping = raw.mapping;
+    if (!isRecord(mapping) || Object.keys(mapping).length === 0) {
+      return null;
+    }
+    const clean: Record<string, string> = Object.create(null);
+    for (const [original, synthetic] of Object.entries(mapping)) {
+      if (typeof synthetic !== "string" || synthetic === "") {
+        return null;
+      }
+      clean[original] = synthetic;
+    }
+    const at = optionalString(raw.at);
+    return { type, cxId, mapping: clean, ...(at === undefined ? {} : { at }) };
+  }
+
   if (type === "comment") {
     const text = raw.text;
     if (typeof text !== "string" || text.trim() === "") {
@@ -126,7 +150,7 @@ function toEvent(raw: Record<string, unknown>): CanvasEvent | null {
   return null;
 }
 
-const KNOWN_TYPES = new Set(["text-edit", "comment", "hide", "remove"]);
+const KNOWN_TYPES = new Set(["text-edit", "comment", "hide", "remove", "duplicate"]);
 
 /** Reads a JSONL event log leniently: what cannot be read is a warning, not a crash. */
 export function parseEventLog(raw: string): ParsedEventLog {

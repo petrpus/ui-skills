@@ -191,3 +191,43 @@ describe("blokové změny a dopředná kompatibilita (#57)", () => {
     ).toThrow(ReviewError);
   });
 });
+
+describe("duplikace (#58)", () => {
+  it("duplicate nese target originálu a neprázdné mapování na syntetická id", () => {
+    const review = validateReview({
+      schemaVersion: REVIEW_SCHEMA_VERSION,
+      changes: [
+        {
+          id: "chg_001",
+          target: { cxId: "cx-5", selector: "li:nth-child(1)" },
+          type: "duplicate",
+          mapping: { "cx-5": "cx-d1", "cx-6": "cx-d2" },
+        },
+      ],
+      comments: [],
+    });
+    const change = review.changes[0];
+    expect(change?.type).toBe("duplicate");
+    expect(change !== undefined && "mapping" in change ? change.mapping["cx-5"] : "").toBe("cx-d1");
+  });
+
+  it("duplicate bez mapování se odmítne", () => {
+    expect(() =>
+      validateReview({
+        schemaVersion: REVIEW_SCHEMA_VERSION,
+        changes: [{ id: "chg_001", target: { cxId: "cx-5" }, type: "duplicate" }],
+        comments: [],
+      }),
+    ).toThrow(/mapping/);
+  });
+
+  it("prázdné mapování se odmítne — duplikát bez identity nejde dál editovat", () => {
+    expect(() =>
+      validateReview({
+        schemaVersion: REVIEW_SCHEMA_VERSION,
+        changes: [{ id: "chg_001", target: { cxId: "cx-5" }, type: "duplicate", mapping: {} }],
+        comments: [],
+      }),
+    ).toThrow(/mapping/);
+  });
+});
