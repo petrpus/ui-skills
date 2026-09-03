@@ -151,6 +151,57 @@ const STYLES = `
     outline: 2px solid #fff;
     pointer-events: none;
   }
+  [data-role="panel"] {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    width: 260px;
+    max-height: calc(100vh - 120px);
+    display: flex;
+    flex-direction: column;
+    border-radius: 8px;
+    background: #111827;
+    color: #f9fafb;
+    font-size: 13px;
+    pointer-events: auto;
+  }
+  [data-role="panel-header"] {
+    padding: 8px 12px;
+    font-weight: 600;
+    border-bottom: 1px solid #374151;
+  }
+  [data-role="panel-list"] {
+    margin: 0;
+    padding: 4px;
+    list-style: none;
+    overflow-y: auto;
+  }
+  [data-role="panel-item"] {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  [data-role="panel-item"] button {
+    border: none;
+    background: none;
+    color: #d1d5db;
+    font: inherit;
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 4px;
+    text-align: left;
+  }
+  [data-role="panel-item"] button:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+  }
+  [data-role="panel-goto"] {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   [data-role="toast"] {
     position: fixed;
     left: 50%;
@@ -210,6 +261,10 @@ const MARKUP = `
       <button type="button" data-role="comment-cancel">Zrušit</button>
     </div>
   </div>
+  <div data-role="panel" hidden>
+    <div data-role="panel-header"></div>
+    <ol data-role="panel-list"></ol>
+  </div>
   <div data-role="toast" hidden></div>
 `;
 
@@ -257,6 +312,9 @@ export function initOverlay(win) {
   const toast = shadow.querySelector("[data-role='toast']");
   const breadcrumbBar = shadow.querySelector("[data-role='breadcrumb']");
   const crumbsHolder = shadow.querySelector("[data-role='crumbs']");
+  const panelBox = shadow.querySelector("[data-role='panel']");
+  const panelHeader = shadow.querySelector("[data-role='panel-header']");
+  const panelList = shadow.querySelector("[data-role='panel-list']");
   const commentForm = shadow.querySelector("[data-role='comment']");
   const commentText = shadow.querySelector("[data-role='comment-text']");
   const commentCategory = shadow.querySelector("[data-role='comment-category']");
@@ -376,7 +434,27 @@ export function initOverlay(win) {
     if (after === before) {
       return undefined;
     }
-    return send({ type: "text-edit", cxId: element.getAttribute("data-cx-id"), before, after });
+    const actionId = mintActionId();
+    registerAction({
+      actionId,
+      kind: "text",
+      label: `✎ „${after.slice(0, 40)}"`,
+      element,
+      revoked: false,
+      undo: () => {
+        element.textContent = before;
+      },
+      redo: () => {
+        element.textContent = after;
+      },
+    });
+    return send({
+      type: "text-edit",
+      cxId: element.getAttribute("data-cx-id"),
+      before,
+      after,
+      actionId,
+    });
   }
 
   function cancelEdit() {
@@ -501,6 +579,7 @@ export function initOverlay(win) {
     shadow.appendChild(pin);
     pinned.push({ element, pin });
     placePin(pin, element);
+    return pin;
   }
 
   function closeCommentForm() {
@@ -537,13 +616,34 @@ export function initOverlay(win) {
     if (text === "") {
       return undefined;
     }
-    addPin(element);
+    const pin = addPin(element);
+    const actionId = mintActionId();
+    registerAction({
+      actionId,
+      kind: "comment",
+      label: `💬 „${text.slice(0, 40)}"`,
+      element,
+      revoked: false,
+      undo: () => {
+        pin.remove();
+        const index = pinned.findIndex((entry) => entry.pin === pin);
+        if (index !== -1) {
+          pinned.splice(index, 1);
+        }
+      },
+      redo: () => {
+        shadow.appendChild(pin);
+        pinned.push({ element, pin });
+        placePin(pin, element);
+      },
+    });
     return send({
       type: "comment",
       cxId: element.getAttribute("data-cx-id"),
       text,
       category: commentCategory.value,
       priority: commentPriority.value,
+      actionId,
     });
   }
 
@@ -568,6 +668,7 @@ export function initOverlay(win) {
     hovered = null;
     place(hoverBox, null);
     updateBreadcrumb();
+    renderPanel();
     try {
       const response = await win.fetch("/done", { method: "POST" });
       const result = await response.json();
@@ -627,6 +728,28 @@ export function initOverlay(win) {
       finishReview();
       return;
     }
+    if ((event.key === "z" || event.key === "Z") && event.ctrlKey) {
+      // Inside an in-place edit or an overlay text field the browser owns
+      // Ctrl+Z — native text undo beats a review-level one there. Focus
+      // resting on an overlay BUTTON is not typing: after clicking 🗑 the
+      // very next Ctrl+Z must undo the removal, not vanish into the host.
+      if (editing !== null) {
+        return;
+      }
+      if (event.target === host) {
+        const active = shadow.activeElement;
+        if (active !== null && /^(input|textarea|select)$/i.test(active.tagName)) {
+          return;
+        }
+      }
+      event.preventDefault();
+      if (event.shiftKey) {
+        restoreLast();
+      } else {
+        undoLast();
+      }
+      return;
+    }
     // Held only when it cannot be ordinary typing: not from the overlay's
     // own form (retargeted to host), not mid-edit, and not from the frozen
     // page's own inputs or editable regions.
@@ -681,10 +804,168 @@ export function initOverlay(win) {
 
   // Unique across page loads, not just within one: a reload or a second
   // tab against the same session appends to the same log, and a counter
-  // alone would mint colliding cx-d1 ids for different elements. The boot
-  // token is random per overlay boot; the counter keeps ids readable.
+  // alone would mint colliding ids for different things. The boot token is
+  // random per overlay boot; counters keep ids readable.
   const bootToken = Math.random().toString(36).slice(2, 8);
   let duplicateCounter = 0;
+  let actionCounter = 0;
+
+  /**
+   * The panel's model: every action the reviewer took, in order, with the
+   * means to take it back in the DOM. The log stays append-only — undo and
+   * discard write revoke events, redo writes restore; the DOM closures
+   * exist so the page matches what the panel claims.
+   *
+   * The closures capture the state at action time, which is inherently
+   * LIFO — yet the panel allows discarding ANY item. Two rules bridge the
+   * gap: a structural undo (remove) re-derives its position at undo time
+   * instead of trusting a captured sibling, and discarding an earlier text
+   * edit cascades onto later edits of the same element, because they built
+   * on its text. A failing undo aborts before anything is marked or sent —
+   * DOM, log and panel never diverge.
+   */
+  const actions = [];
+  const redoIds = [];
+
+  function mintActionId() {
+    actionCounter += 1;
+    return `act-${bootToken}-${actionCounter}`;
+  }
+
+  function registerAction(action) {
+    actions.push(action);
+    // A new action forks history — what was undone can no longer be redone.
+    redoIds.length = 0;
+    renderPanel();
+  }
+
+  function renderPanel() {
+    const visible = actions.filter((action) => !action.revoked);
+    panelHeader.textContent = `Změny (${visible.length})`;
+    panelList.textContent = "";
+    for (const action of visible) {
+      const item = doc.createElement("li");
+      item.setAttribute("data-role", "panel-item");
+
+      const goto = doc.createElement("button");
+      goto.type = "button";
+      goto.setAttribute("data-role", "panel-goto");
+      goto.textContent = action.label;
+      goto.addEventListener("click", () => {
+        if (action.element?.isConnected) {
+          action.element.scrollIntoView?.({ block: "center", behavior: "smooth" });
+          select(action.element);
+        }
+      });
+      item.appendChild(goto);
+
+      if (!closed) {
+        const discard = doc.createElement("button");
+        discard.type = "button";
+        discard.setAttribute("data-role", "panel-discard");
+        discard.title = "Zahodit tuhle položku";
+        discard.textContent = "✕";
+        discard.addEventListener("click", () => {
+          revokeAction(action, { viaUndo: false });
+        });
+        item.appendChild(discard);
+      }
+
+      panelList.appendChild(item);
+    }
+    if (actions.length === 0) {
+      panelBox.setAttribute("hidden", "");
+    } else {
+      panelBox.removeAttribute("hidden");
+    }
+  }
+
+  function revokeOne(action) {
+    try {
+      action.undo();
+    } catch (error) {
+      say(`⚠ zahození se nepovedlo: ${error.message}`);
+      return false;
+    }
+    action.revoked = true;
+    send({ type: "revoke", actionId: action.actionId });
+    return true;
+  }
+
+  function revokeAction(action, { viaUndo }) {
+    if (closed || action.revoked) {
+      return;
+    }
+    // Later edits of the same element build on this one's text — without
+    // them the DOM, the log and the compiled review would tell three
+    // different stories (a coalesced before that exists nowhere).
+    if (!viaUndo && action.kind === "text") {
+      const position = actions.indexOf(action);
+      const dependents = actions.filter(
+        (candidate, index) =>
+          index > position &&
+          !candidate.revoked &&
+          candidate.kind === "text" &&
+          candidate.element === action.element,
+      );
+      for (const dependent of dependents.reverse()) {
+        if (!revokeOne(dependent)) {
+          renderPanel();
+          return;
+        }
+      }
+    }
+    if (!revokeOne(action)) {
+      renderPanel();
+      return;
+    }
+    if (viaUndo) {
+      redoIds.push(action.actionId);
+    } else {
+      // Discard is a choice, not a step back — it does not join redo history.
+      redoIds.length = 0;
+    }
+    if (selected !== null && !selected.isConnected) {
+      select(null);
+    }
+    renderPanel();
+  }
+
+  function undoLast() {
+    if (closed) {
+      return;
+    }
+    for (let index = actions.length - 1; index >= 0; index -= 1) {
+      const action = actions[index];
+      if (!action.revoked) {
+        revokeAction(action, { viaUndo: true });
+        return;
+      }
+    }
+  }
+
+  function restoreLast() {
+    if (closed) {
+      return;
+    }
+    const actionId = redoIds.pop();
+    if (actionId === undefined) {
+      return;
+    }
+    const action = actions.find((candidate) => candidate.actionId === actionId);
+    if (action === undefined) {
+      return;
+    }
+    try {
+      action.redo();
+    } catch (error) {
+      say(`⚠ obnovení se nepovedlo: ${error.message}`);
+      return;
+    }
+    action.revoked = false;
+    send({ type: "restore", actionId });
+    renderPanel();
+  }
 
   function duplicateSelected() {
     if (selected === null || closed) {
@@ -712,7 +993,21 @@ export function initOverlay(win) {
     });
 
     original.after(clone);
-    send({ type: "duplicate", cxId: original.getAttribute("data-cx-id"), mapping });
+    const actionId = mintActionId();
+    registerAction({
+      actionId,
+      kind: "duplicate",
+      label: `⧉ <${original.localName}>`,
+      element: clone,
+      revoked: false,
+      undo: () => {
+        clone.remove();
+      },
+      redo: () => {
+        original.after(clone);
+      },
+    });
+    send({ type: "duplicate", cxId: original.getAttribute("data-cx-id"), mapping, actionId });
   }
 
   function hideSelected() {
@@ -720,7 +1015,27 @@ export function initOverlay(win) {
       return;
     }
     const element = selected;
-    send({ type: "hide", cxId: element.getAttribute("data-cx-id"), subtree: subtreeOf(element) });
+    const previousDisplay = element.style.display;
+    const actionId = mintActionId();
+    registerAction({
+      actionId,
+      kind: "hide",
+      label: `🙈 <${element.localName}>`,
+      element,
+      revoked: false,
+      undo: () => {
+        element.style.display = previousDisplay;
+      },
+      redo: () => {
+        element.style.display = "none";
+      },
+    });
+    send({
+      type: "hide",
+      cxId: element.getAttribute("data-cx-id"),
+      subtree: subtreeOf(element),
+      actionId,
+    });
     // display:none, not removal: a hypothesis stays reversible on the page.
     element.style.display = "none";
     // The element now measures 0x0 at the origin — an outline there is a
@@ -735,7 +1050,40 @@ export function initOverlay(win) {
       return;
     }
     const element = selected;
-    send({ type: "remove", cxId: element.getAttribute("data-cx-id"), subtree: subtreeOf(element) });
+    // Captured before removal — afterwards the element has no parent. The
+    // whole tail of following siblings, not just one: any of them can be
+    // detached by a later remove before this one is discarded, and the
+    // undo re-derives its position from the first survivor instead of
+    // throwing on a stale reference.
+    const parent = element.parentNode;
+    const followingSiblings = [];
+    for (let sibling = element.nextSibling; sibling !== null; sibling = sibling.nextSibling) {
+      followingSiblings.push(sibling);
+    }
+    const actionId = mintActionId();
+    registerAction({
+      actionId,
+      kind: "remove",
+      label: `🗑 <${element.localName}>`,
+      element,
+      revoked: false,
+      undo: () => {
+        if (parent === null) {
+          return;
+        }
+        const anchor = followingSiblings.find((sibling) => sibling.parentNode === parent) ?? null;
+        parent.insertBefore(element, anchor);
+      },
+      redo: () => {
+        element.remove();
+      },
+    });
+    send({
+      type: "remove",
+      cxId: element.getAttribute("data-cx-id"),
+      subtree: subtreeOf(element),
+      actionId,
+    });
     element.remove();
     select(null);
   }

@@ -9,6 +9,8 @@
  */
 
 export interface TextEditEvent {
+  /** Ties the event to a panel action so revoke/restore can name it. */
+  readonly actionId?: string;
   readonly type: "text-edit";
   readonly cxId: string;
   readonly before: string;
@@ -17,6 +19,8 @@ export interface TextEditEvent {
 }
 
 export interface CommentEvent {
+  /** Ties the event to a panel action so revoke/restore can name it. */
+  readonly actionId?: string;
   readonly type: "comment";
   readonly cxId: string;
   readonly text: string;
@@ -33,6 +37,8 @@ export interface SubtreeInfo {
 
 /** hide is a hypothesis, remove an instruction — two events, not a flag. */
 export interface HideEvent {
+  /** Ties the event to a panel action so revoke/restore can name it. */
+  readonly actionId?: string;
   readonly type: "hide";
   readonly cxId: string;
   /** Captured by the overlay before the action — afterwards it is gone. */
@@ -41,6 +47,8 @@ export interface HideEvent {
 }
 
 export interface RemoveEvent {
+  /** Ties the event to a panel action so revoke/restore can name it. */
+  readonly actionId?: string;
   readonly type: "remove";
   readonly cxId: string;
   readonly subtree: SubtreeInfo;
@@ -48,6 +56,8 @@ export interface RemoveEvent {
 }
 
 export interface DuplicateEvent {
+  /** Ties the event to a panel action so revoke/restore can name it. */
+  readonly actionId?: string;
   readonly type: "duplicate";
   readonly cxId: string;
   /** original cx-id → synthetic cx-d id, for the clone's whole subtree. */
@@ -55,7 +65,31 @@ export interface DuplicateEvent {
   readonly at?: string;
 }
 
-export type CanvasEvent = TextEditEvent | CommentEvent | HideEvent | RemoveEvent | DuplicateEvent;
+/**
+ * Undo and discard as new events, never as log surgery: the log stays
+ * append-only, a crash loses nothing, and the compiler settles the final
+ * state at the end. Restore is redo's voice — the last word wins.
+ */
+export interface RevokeEvent {
+  readonly type: "revoke";
+  readonly actionId: string;
+  readonly at?: string;
+}
+
+export interface RestoreEvent {
+  readonly type: "restore";
+  readonly actionId: string;
+  readonly at?: string;
+}
+
+export type CanvasEvent =
+  | TextEditEvent
+  | CommentEvent
+  | HideEvent
+  | RemoveEvent
+  | DuplicateEvent
+  | RevokeEvent
+  | RestoreEvent;
 
 export interface ParsedEventLog {
   readonly events: readonly CanvasEvent[];
@@ -70,6 +104,12 @@ function optionalString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+function actionMeta(raw: Record<string, unknown>): { actionId?: string; at?: string } {
+  const actionId = optionalString(raw.actionId);
+  const at = optionalString(raw.at);
+  return { ...(actionId === undefined ? {} : { actionId }), ...(at === undefined ? {} : { at }) };
+}
+
 /**
  * Structure only, not policy: an unknown comment category still parses,
  * because the log records what the editor sent — judging values is the
@@ -77,6 +117,16 @@ function optionalString(value: unknown): string | undefined {
  */
 function toEvent(raw: Record<string, unknown>): CanvasEvent | null {
   const { type, cxId } = raw;
+
+  if (type === "revoke" || type === "restore") {
+    const actionId = raw.actionId;
+    if (typeof actionId !== "string" || actionId === "") {
+      return null;
+    }
+    const at = optionalString(raw.at);
+    return { type, actionId, ...(at === undefined ? {} : { at }) };
+  }
+
   if (typeof cxId !== "string" || cxId === "") {
     return null;
   }
@@ -86,8 +136,7 @@ function toEvent(raw: Record<string, unknown>): CanvasEvent | null {
     if (typeof before !== "string" || typeof after !== "string") {
       return null;
     }
-    const at = optionalString(raw.at);
-    return { type, cxId, before, after, ...(at === undefined ? {} : { at }) };
+    return { type, cxId, before, after, ...actionMeta(raw) };
   }
 
   if (type === "hide" || type === "remove") {
@@ -100,7 +149,6 @@ function toEvent(raw: Record<string, unknown>): CanvasEvent | null {
     ) {
       return null;
     }
-    const at = optionalString(raw.at);
     return {
       type,
       cxId,
@@ -109,7 +157,7 @@ function toEvent(raw: Record<string, unknown>): CanvasEvent | null {
         elements: subtree.elements,
         textFingerprint: subtree.textFingerprint,
       },
-      ...(at === undefined ? {} : { at }),
+      ...actionMeta(raw),
     };
   }
 
@@ -125,8 +173,7 @@ function toEvent(raw: Record<string, unknown>): CanvasEvent | null {
       }
       clean[original] = synthetic;
     }
-    const at = optionalString(raw.at);
-    return { type, cxId, mapping: clean, ...(at === undefined ? {} : { at }) };
+    return { type, cxId, mapping: clean, ...actionMeta(raw) };
   }
 
   if (type === "comment") {
@@ -136,21 +183,28 @@ function toEvent(raw: Record<string, unknown>): CanvasEvent | null {
     }
     const category = optionalString(raw.category);
     const priority = optionalString(raw.priority);
-    const at = optionalString(raw.at);
     return {
       type,
       cxId,
       text,
       ...(category === undefined ? {} : { category }),
       ...(priority === undefined ? {} : { priority }),
-      ...(at === undefined ? {} : { at }),
+      ...actionMeta(raw),
     };
   }
 
   return null;
 }
 
-const KNOWN_TYPES = new Set(["text-edit", "comment", "hide", "remove", "duplicate"]);
+const KNOWN_TYPES = new Set([
+  "text-edit",
+  "comment",
+  "hide",
+  "remove",
+  "duplicate",
+  "revoke",
+  "restore",
+]);
 
 /** Reads a JSONL event log leniently: what cannot be read is a warning, not a crash. */
 export function parseEventLog(raw: string): ParsedEventLog {

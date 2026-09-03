@@ -108,3 +108,32 @@ describe("duplicate událost (#58)", () => {
     expect(warnings).toHaveLength(1);
   });
 });
+
+describe("revoke a restore (#59)", () => {
+  it("akce nesou volitelné actionId a revoke/restore se přečtou", () => {
+    const raw = log(
+      { type: "text-edit", cxId: "cx-1", before: "A", after: "B", actionId: "act-x-1" },
+      { type: "revoke", actionId: "act-x-1" },
+      { type: "restore", actionId: "act-x-1" },
+    );
+    const { events, warnings } = parseEventLog(raw);
+    expect(events).toHaveLength(3);
+    expect(events[0]).toMatchObject({ type: "text-edit", actionId: "act-x-1" });
+    expect(events[1]).toMatchObject({ type: "revoke", actionId: "act-x-1" });
+    expect(events[2]).toMatchObject({ type: "restore", actionId: "act-x-1" });
+    expect(warnings).toEqual([]);
+  });
+
+  it("revoke bez actionId se přeskočí s varováním", () => {
+    const { events, warnings } = parseEventLog(log({ type: "revoke" }));
+    expect(events).toEqual([]);
+    expect(warnings).toHaveLength(1);
+  });
+
+  it("akce bez actionId zůstává platná — logy fáze 0 se pořád čtou", () => {
+    const { events } = parseEventLog(
+      log({ type: "text-edit", cxId: "cx-1", before: "A", after: "B" }),
+    );
+    expect(events).toHaveLength(1);
+  });
+});

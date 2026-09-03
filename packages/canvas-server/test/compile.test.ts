@@ -284,3 +284,141 @@ describe("duplikace — hijack guard (#58 review)", () => {
     expect(review.changes).toEqual([]);
   });
 });
+
+describe("undo, redo a zahození (#59)", () => {
+  const treeMap: LocationMap = {
+    "cx-8": {
+      selector: "html:nth-child(1) > body:nth-child(2) > section:nth-child(1)",
+      hostPath: [],
+      textFingerprint: "Naše služby Odstavec",
+    },
+    "cx-0": {
+      selector: "html:nth-child(1) > body:nth-child(2) > section:nth-child(1) > h1:nth-child(1)",
+      hostPath: [],
+      textFingerprint: "Naše služby",
+    },
+    "cx-1": {
+      selector: "html:nth-child(1) > body:nth-child(2) > p:nth-child(2)",
+      hostPath: [],
+      textFingerprint: "Odstavec",
+    },
+  };
+  const act = (id: string) => ({ actionId: id });
+
+  it("undo poslední změny → změna ve výstupu není", () => {
+    const review = compileReview(
+      [
+        { ...edit("cx-1", "Odstavec", "Věta"), ...act("a1") },
+        { type: "revoke", actionId: "a1" },
+      ],
+      treeMap,
+    );
+    expect(review.changes).toEqual([]);
+  });
+
+  it("undo následované redo → změna ve výstupu je", () => {
+    const review = compileReview(
+      [
+        { ...edit("cx-1", "Odstavec", "Věta"), ...act("a1") },
+        { type: "revoke", actionId: "a1" },
+        { type: "restore", actionId: "a1" },
+      ],
+      treeMap,
+    );
+    expect(review.changes).toHaveLength(1);
+  });
+
+  it("zahození prostřední položky → ostatní zůstanou, pořadí se nerozpadne", () => {
+    const subtree = { tag: "h1", elements: 1, textFingerprint: "Naše služby" };
+    const review = compileReview(
+      [
+        { ...edit("cx-1", "Odstavec", "Věta"), ...act("a1") },
+        { type: "hide", cxId: "cx-0", subtree, actionId: "a2" },
+        { type: "comment", cxId: "cx-8", text: "Poznámka.", actionId: "a3" },
+        { type: "revoke", actionId: "a2" },
+      ],
+      treeMap,
+    );
+    expect(review.changes.map((change) => [change.type, change.target.cxId])).toEqual([
+      ["text", "cx-1"],
+    ]);
+    expect(review.comments).toHaveLength(1);
+  });
+
+  it("revokovaný komentář ve výstupu není", () => {
+    const review = compileReview(
+      [
+        { type: "comment", cxId: "cx-1", text: "Smazat.", actionId: "a1" },
+        { type: "revoke", actionId: "a1" },
+      ],
+      treeMap,
+    );
+    expect(review.comments).toEqual([]);
+  });
+
+  it("smazání rodiče po editaci potomka → edit potomka se nepropaguje (test z PRD)", () => {
+    const subtree = { tag: "section", elements: 3, textFingerprint: "Naše služby Odstavec" };
+    const review = compileReview(
+      [edit("cx-0", "Naše služby", "Služby"), { type: "remove", cxId: "cx-8", subtree }],
+      treeMap,
+    );
+    expect(review.changes).toHaveLength(1);
+    expect(review.changes[0]?.type).toBe("remove");
+  });
+
+  it("edit sourozence smazaného prvku zůstává — prořezává se jen podstrom", () => {
+    const subtree = { tag: "section", elements: 3, textFingerprint: "Naše služby Odstavec" };
+    const review = compileReview(
+      [edit("cx-1", "Odstavec", "Věta"), { type: "remove", cxId: "cx-8", subtree }],
+      treeMap,
+    );
+    expect(review.changes.map((change) => change.type).sort()).toEqual(["remove", "text"]);
+  });
+});
+
+describe("kaskáda a vnořené removes (#59 review)", () => {
+  it("revoke obou editací téhož prvku → žádná změna, before z půlky historie neexistuje", () => {
+    const review = compileReview(
+      [
+        { ...edit("cx-1", "X", "Y"), actionId: "a1" },
+        { ...edit("cx-1", "Y", "Z"), actionId: "a2" },
+        { type: "revoke", actionId: "a2" },
+        { type: "revoke", actionId: "a1" },
+      ],
+      map,
+    );
+    expect(review.changes).toEqual([]);
+  });
+
+  it("vnořené removes zůstávají obě — každý kořen nese vlastní subtree záměrně", () => {
+    const treeMap: LocationMap = {
+      "cx-8": {
+        selector: "html:nth-child(1) > body:nth-child(2) > section:nth-child(1)",
+        hostPath: [],
+        textFingerprint: "Sekce",
+      },
+      "cx-0": {
+        selector: "html:nth-child(1) > body:nth-child(2) > section:nth-child(1) > h1:nth-child(1)",
+        hostPath: [],
+        textFingerprint: "Nadpis",
+      },
+    };
+    const review = compileReview(
+      [
+        {
+          type: "remove",
+          cxId: "cx-0",
+          subtree: { tag: "h1", elements: 1, textFingerprint: "Nadpis" },
+        },
+        {
+          type: "remove",
+          cxId: "cx-8",
+          subtree: { tag: "section", elements: 3, textFingerprint: "Sekce" },
+        },
+      ],
+      treeMap,
+    );
+    // Agent vidí oba explicitní pokyny; dedup by ztratil vyslovený záměr.
+    expect(review.changes.filter((change) => change.type === "remove")).toHaveLength(2);
+  });
+});

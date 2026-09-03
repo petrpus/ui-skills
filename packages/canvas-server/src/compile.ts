@@ -63,12 +63,22 @@ export function compileReview(
   map: LocationMap,
   options: CompileOptions = {},
 ): Review {
+  // First pass: which actions the reviewer took back. Undo writes revoke,
+  // redo writes restore — replayed in log order, the last word wins. An
+  // event without an actionId (a phase-0 log) can never be revoked.
+  const revoked = new Set<string>();
+  for (const event of events) {
+    if (event.type === "revoke") {
+      revoked.add(event.actionId);
+    } else if (event.type === "restore") {
+      revoked.delete(event.actionId);
+    }
+  }
+  const isRevoked = (event: { actionId?: string }): boolean =>
+    event.actionId !== undefined && revoked.has(event.actionId);
+
   // Insertion order is the order of each element's first touch, which keeps
   // change ids stable however many times the reviewer went back and forth.
-  // Keyed by the element's own cxId only: an edit of a child under a
-  // removed ancestor still comes out as its own change — pruning by
-  // ancestry needs the location map's tree knowledge and lands with the
-  // undo slice (#59), where the PRD pins it with a test.
   const perElement = new Map<string, PendingElement>();
   const comments: ReviewComment[] = [];
 
@@ -83,6 +93,12 @@ export function compileReview(
   };
 
   for (const event of events) {
+    if (event.type === "revoke" || event.type === "restore") {
+      continue;
+    }
+    if (isRevoked(event)) {
+      continue;
+    }
     if (event.type === "text-edit") {
       const pending = pendingFor(event.cxId);
       // An edit after a remove has nothing to land on — the reviewer is
@@ -139,6 +155,35 @@ export function compileReview(
       ...(category === undefined ? {} : { category }),
       ...(priority === undefined ? {} : { priority }),
     });
+  }
+
+  // Pruning by ancestry (the PRD test: a child edited, then its parent
+  // removed — the edit has nowhere to apply). Descendance is read from the
+  // map's positional selectors: a child's path extends its ancestor's.
+  // Synthetic ids are not in the map and stay untouched.
+  const removedSelectors: string[] = [];
+  for (const [cxId, pending] of perElement) {
+    if (pending.block?.type === "remove") {
+      const location = map[cxId];
+      if (location !== undefined && location.hostPath.length === 0) {
+        removedSelectors.push(location.selector);
+      }
+    }
+  }
+  const underRemovedAncestor = (cxId: string): boolean => {
+    const location = map[cxId];
+    if (location === undefined || location.hostPath.length > 0) {
+      return false;
+    }
+    return removedSelectors.some((ancestor) => location.selector.startsWith(`${ancestor} > `));
+  };
+  for (const [cxId, pending] of perElement) {
+    if (underRemovedAncestor(cxId)) {
+      pending.edit = undefined;
+      if (pending.block?.type === "hide") {
+        pending.block = undefined;
+      }
+    }
   }
 
   // Emission is stable-by-slot per element (edit, block, duplicates), not
