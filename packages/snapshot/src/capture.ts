@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } 
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { instrument } from "./instrument.ts";
+import { looksLikeLoginPage } from "./preflight.ts";
 import { sanitize } from "./sanitize.ts";
 
 /**
@@ -25,6 +26,8 @@ export interface CaptureResult {
   readonly removedActiveParts: number;
   readonly bytes: number;
   readonly milliseconds: number;
+  /** Best-effort: the capture resembles a login screen (see preflight.ts). */
+  readonly looksLikeLogin: boolean;
 }
 
 function sessionName(now: Date): string {
@@ -49,6 +52,13 @@ function runSingleFile(url: string, outPath: string, options: SingleFileOptions)
     String(options.loadMaxTimeMs ?? 60_000),
   ];
 
+  // A short grace after networkIdle, for URLs only: lazy content that fires
+  // right after idle still makes it in, a local file has nothing to wait
+  // for. Below-the-fold lazy loading stays out of scope — that is #37.
+  if (/^https?:\/\//i.test(url)) {
+    args.push("--browser-wait-delay", "1000");
+  }
+
   if (options.browserExecutablePath !== undefined) {
     args.push("--browser-executable-path", options.browserExecutablePath);
   }
@@ -70,6 +80,10 @@ function runSingleFile(url: string, outPath: string, options: SingleFileOptions)
 /**
  * Freezes a page into one self-contained file, strips whatever could still run
  * in it, and gives every element an identifier.
+ *
+ * Deliberately synchronous, which also means no preflight: the CLIs await
+ * `preflightUrl` before calling this, and a library caller must do the same
+ * or live with the serialiser's uninformative failure mode.
  *
  * The order matters. Instrumentation runs on the copy, never on the original:
  * serialisation removes scripts, so positions computed on the live page do not
@@ -104,6 +118,12 @@ export function capture(
 
   writeFileSync(snapshotPath, instrumented.html);
   writeFileSync(mapPath, `${JSON.stringify(instrumented.map, null, 2)}\n`);
+  // Where the session came from, for review.json's meta: the session dir is
+  // the hand-off between capture and server, so provenance rides with it.
+  writeFileSync(
+    join(sessionDir, "session.json"),
+    `${JSON.stringify({ source: input, capturedAt: now.toISOString() }, null, 2)}\n`,
+  );
 
   return {
     sessionDir,
@@ -113,5 +133,6 @@ export function capture(
     removedActiveParts: cleaned.removed,
     bytes: statSync(snapshotPath).size,
     milliseconds: Date.now() - started,
+    looksLikeLogin: looksLikeLoginPage(captured, input),
   };
 }

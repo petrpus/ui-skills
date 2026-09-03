@@ -228,3 +228,38 @@ describe("serveSession", () => {
     server = undefined;
   });
 });
+
+describe("meta ze session.json (#56)", () => {
+  it("review.json nese source a capturedAt, když session.json existuje", async () => {
+    writeFileSync(
+      join(sessionDir, "session.json"),
+      JSON.stringify({ source: "https://example.test/", capturedAt: "2026-09-03T08:00:00.000Z" }),
+    );
+    const { url } = await start();
+    await fetch(`${url}/done`, { method: "POST" });
+    const review = validateReview(
+      JSON.parse(readFileSync(join(sessionDir, "review.json"), "utf8")),
+    );
+    expect(review.meta?.source).toBe("https://example.test/");
+    expect(review.meta?.capturedAt).toBe("2026-09-03T08:00:00.000Z");
+    server = undefined;
+  });
+
+  it("bez session.json review vznikne bez source — chybějící meta není chyba", async () => {
+    const { url } = await start();
+    await fetch(`${url}/done`, { method: "POST" });
+    const review = validateReview(
+      JSON.parse(readFileSync(join(sessionDir, "review.json"), "utf8")),
+    );
+    expect(review.meta?.source).toBeUndefined();
+    server = undefined;
+  });
+
+  it("rozbitý session.json kompilaci neshodí", async () => {
+    writeFileSync(join(sessionDir, "session.json"), "{rozbité");
+    const { url } = await start();
+    const response = await fetch(`${url}/done`, { method: "POST" });
+    expect(response.status).toBe(200);
+    server = undefined;
+  });
+});

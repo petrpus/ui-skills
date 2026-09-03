@@ -1,14 +1,20 @@
 #!/usr/bin/env node
-import { capture, reportClosedShadowRoots, targetUrl } from "@ui-skills/snapshot";
+import {
+  capture,
+  loginWarning,
+  preflightUrl,
+  reportClosedShadowRoots,
+  targetUrl,
+} from "@ui-skills/snapshot";
 import { chromium } from "playwright";
 import { serveSession } from "./server.ts";
 
-const USAGE = `Použití: ui-review <soubor.html> [--work-dir <adresář>] [--port <číslo>]
+const USAGE = `Použití: ui-review <soubor.html | https://…> [--work-dir <adresář>] [--port <číslo>]
 
   Zachytí stránku, naservíruje ji s editorem a počká, než člověk review
   uzavře („Hotovo" nebo Ctrl+Enter). Pak vypíše cestu k review.json.
 
-  soubor.html   stránka k review (zatím jen lokální soubor)
+  vstup         lokální HTML soubor, nebo veřejná URL (bez přihlášení)
   --work-dir    kam ukládat session (výchozí: .ui-skills)
   --port        pevný port (výchozí: volný port přidělí systém)`;
 
@@ -63,10 +69,15 @@ async function main(): Promise<void> {
   try {
     const { input, workDir, port } = parseArgs(argv);
 
+    await preflightUrl(input);
     const captured = capture(input, workDir, {
       browserExecutablePath: chromium.executablePath(),
     });
     process.stdout.write(`✓ snapshot: ${captured.snapshotPath} (${captured.elements} prvků)\n`);
+
+    if (captured.looksLikeLogin) {
+      process.stderr.write(`${loginWarning()}\n`);
+    }
 
     // Named before the human starts reviewing, not after: a copy with holes
     // deserves distrust up front. Never fatal — a failed detection must not
